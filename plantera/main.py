@@ -14,7 +14,7 @@ import typer
 
 app = typer.Typer(add_completion=False)
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 BANNER = r"""
   __
@@ -27,8 +27,24 @@ BANNER = r"""
   ||
 """
 
+def version_callback(value: bool) -> None:
+    """
+    Callback function for the --version option.
+
+    :param value: bool
+        True if the --version option is provided, False otherwise.
+    :return:  None
+    """
+    if value:
+        typer.echo(f"Plantera v{__version__}")
+        raise typer.Exit()
+
+
 @app.callback(invoke_without_command=True)
-def startup(ctx: typer.Context) -> None:
+def startup(
+    ctx: typer.Context,
+    version: bool = typer.Option(None, "--version", callback=version_callback, is_eager=True, help="Show version and exit.")
+) -> None:
     """Initialize the database on startup."""
 
     # Show banner on first run
@@ -46,12 +62,6 @@ def startup(ctx: typer.Context) -> None:
         Console().print("[dark_orange]Usage:[/dark_orange] [green]plantera[/green] <command>")
         Console().print("Try '[green]plantera[/green] [cornflower_blue]--help[/cornflower_blue]' for more information.")
         raise typer.Exit()
-
-
-@app.command()
-def version() -> None:
-    """Show the current version of Plantera."""
-    typer.echo(f"Plantera v{__version__}")
 
 
 @app.command()

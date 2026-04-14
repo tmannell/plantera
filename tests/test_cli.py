@@ -8,8 +8,8 @@ runner = CliRunner()
 
 
 def test_cli_version(test_db) -> None:
-    """Test the version command outputs the correct version."""
-    result = runner.invoke(app, ['version'])
+    """Test the --version option outputs the correct version."""
+    result = runner.invoke(app, ['--version'])
     assert result.exit_code == 0
     assert result.output == f"Plantera v{__version__}\n"
 
