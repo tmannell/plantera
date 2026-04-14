@@ -10,7 +10,14 @@ wheels/
 .venv
 
 # Database
-plantera.db
+*.db
+
+# IDE
+.idea/
+
+# Cache
+.pytest_cache/
+.ruff_cache/
 
 # VHS demo recording
 vhs/
