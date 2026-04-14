@@ -7,7 +7,7 @@ from plantera.service import add_plant_species
 def test_db(monkeypatch, tmp_path):
     """Set up a temporary database for each test."""
     db_file = tmp_path / "test.db"
-    monkeypatch.setattr(db, "DB_PATH", str(db_file))
+    monkeypatch.setattr(db, "DB_PATH", db_file)
     db.db_init()
 
 
