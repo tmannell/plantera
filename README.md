@@ -4,7 +4,7 @@
 
 Too busy writing code to remember to water your plants? Try Plantera, a simple CLI tool that lets you track and schedule watering of your little work buddies.
 
-![demo](assets/demo.gif)
+![demo](https://raw.githubusercontent.com/tmannell/plantera/main/assets/demo.gif)
 
 ## Installation
 
