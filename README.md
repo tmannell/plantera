@@ -6,7 +6,20 @@ Too busy writing code to remember to water your plants? Try Plantera, a simple C
 
 ![demo](assets/demo.gif)
 
-> **Installation via pip coming soon.** In the meantime, see [Dev Setup](#dev-setup) to run from source.
+## Installation
+
+Requires Python 3.11+.
+
+```bash
+# with pipx (recommended)
+pipx install plantera
+
+# with pip
+pip install plantera
+
+# with uv
+uv tool install plantera
+```
 
 ## Quick Start
 
@@ -112,7 +125,7 @@ Schedule `plantera remind` to run daily using cron (Linux), launchd (macOS), or 
 
 ## Data
 
-Plantera stores all data locally in a SQLite database (`plantera.db`) in the directory where you run it. No accounts, no cloud, no setup required.
+Plantera stores all data locally in a SQLite database at `~/.local/share/plantera/plantera.db`. No accounts, no cloud, no setup required.
 
 ---
 

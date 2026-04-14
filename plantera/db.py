@@ -1,7 +1,8 @@
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path("plantera.db")
+DB_DIR = Path.home() / ".local" / "share" / "plantera"
+DB_PATH = DB_DIR / "plantera.db"
 
 def db_init():
     """
@@ -12,6 +13,8 @@ def db_init():
     Exception or None
         None on success, Exception on failure
     """
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+
     with get_connection() as conn:
         try:
             conn.execute("CREATE TABLE IF NOT EXISTS plant_species ( \
