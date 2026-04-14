@@ -14,18 +14,18 @@ import typer
 
 app = typer.Typer(add_completion=False)
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
-BANNER = r"""
+BANNER = """[green]
   __
- /  \    ██████╗ ██╗      █████╗ ███╗   ██╗████████╗███████╗██████╗  █████╗
-/    \   ██╔══██╗██║     ██╔══██╗████╗  ██║╚══██╔══╝██╔════╝██╔══██╗██╔══██╗
-\ ~~ /   ██████╔╝██║     ███████║██╔██╗ ██║   ██║   █████╗  ██████╔╝███████║
- \  /    ██╔═══╝ ██║     ██╔══██║██║╚██╗██║   ██║   ██╔══╝  ██╔══██╗██╔══██║
-  \/     ██║     ███████╗██║  ██║██║ ╚████║   ██║   ███████╗██║  ██║██║  ██║
+ /  \\    ██████╗ ██╗      █████╗ ███╗   ██╗████████╗███████╗██████╗  █████╗
+/    \\   ██╔══██╗██║     ██╔══██╗████╗  ██║╚══██╔══╝██╔════╝██╔══██╗██╔══██╗
+\\ ~~ /   ██████╔╝██║     ███████║██╔██╗ ██║   ██║   █████╗  ██████╔╝███████║
+ \\  /    ██╔═══╝ ██║     ██╔══██║██║╚██╗██║   ██║   ██╔══╝  ██╔══██╗██╔══██║
+  \\/     ██║     ███████╗██║  ██║██║ ╚████║   ██║   ███████╗██║  ██║██║  ██║
   ||     ╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
   ||
-"""
+[/green]"""
 
 def version_callback(value: bool) -> None:
     """
@@ -58,7 +58,7 @@ def startup(
     if first_run:
         Console().print(BANNER, highlight=False)
 
-    if first_run or ctx.invoked_subcommand is None:
+    if ctx.invoked_subcommand is None:
         Console().print("[dark_orange]Usage:[/dark_orange] [green]plantera[/green] <command>")
         Console().print("Try '[green]plantera[/green] [cornflower_blue]--help[/cornflower_blue]' for more information.")
         raise typer.Exit()
