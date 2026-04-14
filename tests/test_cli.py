@@ -1,10 +1,17 @@
 from typer.testing import CliRunner
 from datetime import date, timedelta
-from plantera.main import app
+from plantera.main import app, __version__
 from plantera.service import add_plant
 import humanize
 
 runner = CliRunner()
+
+
+def test_cli_version(test_db) -> None:
+    """Test the version command outputs the correct version."""
+    result = runner.invoke(app, ['version'])
+    assert result.exit_code == 0
+    assert result.output == f"Plantera v{__version__}\n"
 
 
 def test_cli_add_plant(test_db, create_species) -> None:

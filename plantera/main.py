@@ -14,6 +14,8 @@ import typer
 
 app = typer.Typer(add_completion=False)
 
+__version__ = "0.1.0"
+
 BANNER = r"""
   __
  /  \    ██████╗ ██╗      █████╗ ███╗   ██╗████████╗███████╗██████╗  █████╗
@@ -44,6 +46,12 @@ def startup(ctx: typer.Context) -> None:
         Console().print("[dark_orange]Usage:[/dark_orange] [green]plantera[/green] <command>")
         Console().print("Try '[green]plantera[/green] [cornflower_blue]--help[/cornflower_blue]' for more information.")
         raise typer.Exit()
+
+
+@app.command()
+def version() -> None:
+    """Show the current version of Plantera."""
+    typer.echo(f"Plantera v{__version__}")
 
 
 @app.command()
