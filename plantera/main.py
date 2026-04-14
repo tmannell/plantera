@@ -1,25 +1,50 @@
 
-from typing import Annotated, Optional, Union
+from datetime import datetime, date
+from plyer import notification
 from rich.console import Console
 from rich.table import Table
 from rich.box import ROUNDED
-from datetime import datetime, date
+from typing import Annotated, Optional, Union
 
 import humanize
 import plantera.db as db
 import plantera.service as service
+import subprocess
+import sys
 import typer
 
-app = typer.Typer()
+app = typer.Typer(add_completion=False)
 
-@app.callback()
-def startup() -> None:
+BANNER = r"""
+  __
+ /  \    ██████╗ ██╗      █████╗ ███╗   ██╗████████╗███████╗██████╗  █████╗
+/    \   ██╔══██╗██║     ██╔══██╗████╗  ██║╚══██╔══╝██╔════╝██╔══██╗██╔══██╗
+\ ~~ /   ██████╔╝██║     ███████║██╔██╗ ██║   ██║   █████╗  ██████╔╝███████║
+ \  /    ██╔═══╝ ██║     ██╔══██║██║╚██╗██║   ██║   ██╔══╝  ██╔══██╗██╔══██║
+  \/     ██║     ███████╗██║  ██║██║ ╚████║   ██║   ███████╗██║  ██║██║  ██║
+  ||     ╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
+  ||
+"""
+
+@app.callback(invoke_without_command=True)
+def startup(ctx: typer.Context) -> None:
     """Initialize the database on startup."""
+
+    # Show banner on first run
+    first_run = not db.DB_PATH.exists()
 
     # Initialize the database
     result = db.db_init()
     if result not in [True, None]:
         typer.echo(f"Error initializing database: {str(result)}")
+
+    if first_run:
+        Console().print(BANNER, highlight=False)
+
+    if first_run or ctx.invoked_subcommand is None:
+        Console().print("[dark_orange]Usage:[/dark_orange] [green]plantera[/green] <command>")
+        Console().print("Try '[green]plantera[/green] [cornflower_blue]--help[/cornflower_blue]' for more information.")
+        raise typer.Exit()
 
 
 @app.command()
@@ -314,6 +339,33 @@ def delete_species(genus: Annotated[str, typer.Argument(help="Genus of the plant
         typer.echo(f"Species '{genus}' deleted successfully!")
     else:
         typer.echo(str(result))
+
+@app.command()
+def remind() -> None:
+    """
+    Send reminders to the GUI for plants due for watering.
+
+    :return: None
+    """
+    # Get plants due for watering
+    plants = service.show_plants(False, True)
+    # If plants are due for watering, send a notification
+    if len(plants) > 0:
+        reminders = []
+        # Cycle through plants and build a list for the notification
+        for plant in plants:
+            next_watering = date.fromisoformat(plant['next_watering'])
+            reminders.append(f"Water {plant['nickname']} - {plant['common_name']} (Due: {humanize.naturalday(next_watering)})")
+        # Set title and make list into a string.
+        title = "Water Reminder"
+        message = '\n'.join(reminders)
+    
+        if sys.platform == "linux":
+            # If on Linux, use notify-send to send the notification. Plyer doesn't respect the timeout parameter.
+            subprocess.call(["notify-send", "-t", "10000", "-a", "Plantera", title, message])
+        else:
+            # If on Windows or macOS, use the plyer notification module.
+            notification.notify(title=title, message=message, timeout=10)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import sqlite3
+from pathlib import Path
 
-DB_PATH = "plantera.db"
+DB_PATH = Path("plantera.db")
 
 def db_init():
     """
