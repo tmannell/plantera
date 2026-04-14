@@ -1,10 +1,9 @@
 
-from datetime import datetime, date
-from plyer import notification
+from datetime import date
 from rich.console import Console
 from rich.table import Table
 from rich.box import ROUNDED
-from typing import Annotated, Optional, Union
+from typing import Annotated, Optional
 
 import humanize
 import plantera.db as db
@@ -134,20 +133,20 @@ def show(
 
     if isinstance(result, list):
         if len(result) == 0 and not due:
-            typer.echo("No plants found.")
+            typer.echo("No plants in your collection yet. Try 'plantera add --help'.")
         elif len(result) == 0 and due:
             with db.get_connection() as conn:
                 cursor = conn.execute("SELECT * FROM my_plants")
                 plants = cursor.fetchall()
                 if len(plants) == 0:
-                    typer.echo("No plants found.")
+                    typer.echo("No plants in your collection yet. Try 'plantera add --help'.")
                 else:
                     typer.echo("All plants are watered and up to date.")
         else:
             # Results aren't empty format table for output
             if not species:
                 # My Plants table can be filtered by due for watering
-                table = Table(title="\nMy Plants", header_style="bold green", border_style="green", box=ROUNDED, row_styles=["", "bold"])
+                table = Table(title="\nPlantera", header_style="bold green", border_style="green", box=ROUNDED, row_styles=["", "bold"])
 
                 table.add_column("Nickname")
                 table.add_column("Genus")
@@ -158,11 +157,11 @@ def show(
                 table.add_column("Care Info")
 
                 for plant in result:
-                    next_watering_date = humanize.naturalday(date.fromisoformat(plant['next_watering']))
+                    next_watering_date = date.fromisoformat(plant['next_watering'])
                     if plant['next_watering'] < str(date.today()):
                         next_watering = f"[red]{humanize.naturalday(next_watering_date)}[/red]"
                     else:
-                        next_watering = next_watering_date
+                        next_watering = humanize.naturalday(next_watering_date)
 
                     table.add_row(
                         plant['nickname'],
@@ -184,8 +183,8 @@ def show(
                 table.add_column("Common Name")
                 table.add_column("Care Info")
 
-                for species in result:
-                    table.add_row(str(species['id']), species['genus'], species['common_name'], species['care_info'])
+                for row in result:
+                    table.add_row(str(row['id']), row['genus'], row['common_name'], row['care_info'])
 
                 Console().print(table)
 
@@ -208,7 +207,7 @@ def watered(nickname: Annotated[str, typer.Argument(help="Mark plant as watered 
     success, result = service.watered(nickname)
     # Check the result and output the appropriate message
     if success:
-        typer.echo(f"'{nickname}' marked as watered, the next watering date is {result}.")
+        typer.echo(f"Plant '{nickname}' marked as watered, next watering is {humanize.naturalday(result)}.")
     else:
         typer.echo(str(result))
 
@@ -245,7 +244,7 @@ def update(
     result = service.update_plant(my_plant, nickname, genus, last_watered, next_watering, interval)
 
     # Check the result and output the appropriate message
-    if isinstance(result, bool) and result == True:
+    if result is True:
         typer.echo(f"Plant '{my_plant}' updated successfully!")
 
     elif isinstance(result, str):
@@ -281,7 +280,7 @@ def update_species(
     result = service.update_species(genus_to_update, genus, common_name, care_info)
 
     # Check the result and output the appropriate message
-    if isinstance(result, bool) and result == True:
+    if result is True:
         typer.echo(f"Species '{genus_to_update}' updated successfully!")
     elif isinstance(result, str):
         typer.echo(result)
@@ -309,7 +308,7 @@ def delete(nickname: Annotated[str, typer.Argument(help="Nickname of the plant t
     result = service.delete_plant(nickname)
 
     # Check the result and output the appropriate message
-    if isinstance(result, bool) and result == True:
+    if result is True:
         typer.echo(f"Plant '{nickname}' deleted successfully!")
     else:
         typer.echo(str(result))
@@ -335,7 +334,7 @@ def delete_species(genus: Annotated[str, typer.Argument(help="Genus of the plant
     result = service.delete_species(genus)
 
     # Check the result and output the appropriate message
-    if isinstance(result, bool) and result == True:
+    if result is True:
         typer.echo(f"Species '{genus}' deleted successfully!")
     else:
         typer.echo(str(result))
@@ -365,6 +364,7 @@ def remind() -> None:
             subprocess.call(["notify-send", "-t", "10000", "-a", "Plantera", title, message])
         else:
             # If on Windows or macOS, use the plyer notification module.
+            from plyer import notification
             notification.notify(title=title, message=message, timeout=10)
 
 

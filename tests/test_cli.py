@@ -2,6 +2,7 @@ from typer.testing import CliRunner
 from datetime import date, timedelta
 from plantera.main import app
 from plantera.service import add_plant
+import humanize
 
 runner = CliRunner()
 
@@ -71,7 +72,7 @@ def test_cli_show_plants(test_db, create_species) -> None:
     # Test empty database state
     result = runner.invoke(app, ['show'])
     assert result.exit_code == 0
-    assert result.output == "No plants found.\n"
+    assert result.output == "No plants in your collection yet. Try 'plantera add --help'.\n"
 
     result = create_species()
     assert result is True
@@ -130,7 +131,7 @@ def test_cli_watered(test_db, create_species) -> None:
     result = runner.invoke(app, ['watered', 'Joe'])
     assert result.exit_code == 0
     next_watering = date.today() + timedelta(days=14)
-    assert result.output == f"'Joe' marked as watered, the next watering date is {next_watering}.\n"
+    assert result.output == f"Plant 'Joe' marked as watered, next watering is {humanize.naturalday(next_watering)}.\n"
 
     # Test error case — non-existent plant
     result = runner.invoke(app, ['watered', 'Jim'])
@@ -246,7 +247,13 @@ def test_cli_delete_species(test_db, create_species) -> None:
     result = runner.invoke(app, ['delete-species', 'Crassula'], input='n\n')
     assert "Deletion cancelled." in result.output
 
-    # Confirm deletion
+    # Test error case — species has plants associated with it
+    runner.invoke(app, ['add', 'Joe', 'Crassula', '2026-04-01', '7'])
+    result = runner.invoke(app, ['delete-species', 'Crassula'], input='y\n')
+    assert "Error: Species 'Crassula' has plants associated with it. Delete the plants first." in result.output
+
+    # Delete plant first, then confirm species deletion
+    runner.invoke(app, ['delete', 'Joe'], input='y\n')
     result = runner.invoke(app, ['delete-species', 'Crassula'], input='y\n')
     assert result.exit_code == 0
     assert "Species 'Crassula' deleted successfully!\n" in result.output

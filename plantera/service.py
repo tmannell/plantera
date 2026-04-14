@@ -392,6 +392,10 @@ def delete_species(genus: str) -> Union[bool, Exception, str]:
     else:
         try:
             with db.get_connection() as conn:
+                cursor = conn.execute("SELECT COUNT(*) FROM my_plants WHERE plant_species_id = ?", [species['id']])
+                if cursor.fetchone()[0] > 0:
+                    return f"Error: Species '{genus}' has plants associated with it. Delete the plants first."
+
                 conn.execute("DELETE FROM plant_species WHERE id = ?", [species['id']])
 
                 return True
@@ -428,7 +432,7 @@ def _get_plant(table: str, value: str) -> Optional[dict]:
             cursor = conn.execute(f"SELECT * FROM {table} WHERE {column} = ?", [value])
             return cursor.fetchone()
 
-    except Exception as e:
+    except Exception:
         return None
 
 def _validate_inputs(nickname: str = None, genus: str = None, common_name: str = None, last_watered: str = None, next_watering: str = None,

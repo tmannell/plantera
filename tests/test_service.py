@@ -305,7 +305,13 @@ def test_delete_species(test_db, create_species) -> None:
     result = delete_species('Rosa')
     assert result == "Error: Species 'Rosa' not found. Run 'plantera show --species' to see available species."
 
-    # Delete the species and verify it's removed from the database
+    # Test error case — species has plants associated with it
+    add_plant('Joe', 'Crassula', '2026-04-01', 7)
+    result = delete_species('Crassula')
+    assert result == "Error: Species 'Crassula' has plants associated with it. Delete the plants first."
+
+    # Delete the plant first, then delete the species
+    delete_plant('Joe')
     result = delete_species('Crassula')
     assert result is True
 
