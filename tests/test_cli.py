@@ -2,6 +2,8 @@ from typer.testing import CliRunner
 from datetime import date, timedelta
 from plantera.main import app, __version__
 from plantera.service import add_plant
+from unittest.mock import patch
+
 import humanize
 
 runner = CliRunner()
@@ -106,7 +108,7 @@ def test_cli_show_plants(test_db, create_species) -> None:
     assert 'Crassula' in result.output
 
     # Show plant with a specific nickname
-    result == runner.invoke(app, ['show', '--name', 'Jim'])
+    result = runner.invoke(app, ['show', '--name', 'Jim'])
     assert result.exit_code == 0
     assert 'Jim' in result.output
     assert 'Crassula' in result.output
@@ -283,3 +285,32 @@ def test_cli_delete_species(test_db, create_species) -> None:
     result = runner.invoke(app, ['delete-species', 'Crassula'], input='y\n')
     assert result.exit_code == 0
     assert "Species 'Crassula' deleted successfully!\n" in result.output
+
+def test_cli_remind(test_db, create_species) -> None:
+    """
+    Test the remind CLI command for no plants due and plants due cases.
+
+    Parameters
+    ----------
+    test_db : fixture
+        Pytest fixture providing an isolated temporary database.
+    create_species : fixture
+        Factory fixture to insert a test species.
+    """
+    # Test with empty database — no plants due
+    result = runner.invoke(app, ['remind'])
+    assert result.exit_code == 0
+    assert result.output == 'No plants are due for watering.\n'
+
+    # Set up an overdue plant
+    result = create_species()
+    assert result is True
+    result = add_plant('Joe', 'Crassula', str(date.today() - timedelta(days=14)), 14)
+    assert result is True
+
+    # Test with overdue plant — mock notify-send to avoid firing a real notification
+    with patch('subprocess.call'):
+        result = runner.invoke(app, ['remind'])
+    assert result.exit_code == 0
+    assert 'Water Joe - Jade Plant (Due: today)\n' in result.output
+
