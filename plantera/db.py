@@ -19,14 +19,14 @@ def db_init():
         try:
             conn.execute("CREATE TABLE IF NOT EXISTS plant_species ( \
                          id INTEGER PRIMARY KEY AUTOINCREMENT, \
-                         genus TEXT UNIQUE, \
+                         genus TEXT UNIQUE COLLATE NOCASE, \
                          common_name TEXT, \
                          care_info TEXT)")
 
             conn.execute("CREATE TABLE IF NOT EXISTS my_plants ( \
                          id INTEGER PRIMARY KEY AUTOINCREMENT, \
                          plant_species_id INTEGER, \
-                         nickname TEXT UNIQUE, \
+                         nickname TEXT UNIQUE COLLATE NOCASE, \
                          last_watered TEXT, \
                          next_watering TEXT, \
                          interval INTEGER)")

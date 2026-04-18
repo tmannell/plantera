@@ -127,6 +127,7 @@ def add_species(
 
 @app.command()
 def show(
+        name: Annotated[Optional[str], typer.Option(help="Search plants by nickname")] = None,
         species: Annotated[bool, typer.Option(help="Show Species (True / False)")] = False,
         due: Annotated[bool, typer.Option(help="Show only plants due for watering (True / False)")] = False,
 ) -> None:
@@ -135,6 +136,8 @@ def show(
 
     Parameters
     ----------
+    name : str
+        If provided, show a single plant matching the nickname
     species : bool
         If True, show plant species instead of my plants
     due : bool
@@ -145,13 +148,19 @@ def show(
     if species and due:
         typer.echo("Error: Cannot use --species and --due together.")
         return
+    # Check if name and species or due are True and output an error message
+    if name and (species or due):
+        typer.echo("Error: Cannot use --name with --species or --due.")
+        return
 
     # Show plants based on the specified criteria
-    result = service.show_plants(species, due)
+    result = service.show_plants(name, species, due)
 
     if isinstance(result, list):
         if len(result) == 0 and not due:
             typer.echo("No plants in your collection yet. Try 'plantera add --help'.")
+        elif len(result) == 0 and name:
+            typer.echo(f"No plants found with nickname '{name}'.")
         elif len(result) == 0 and due:
             with db.get_connection() as conn:
                 cursor = conn.execute("SELECT * FROM my_plants")
@@ -160,6 +169,7 @@ def show(
                     typer.echo("No plants in your collection yet. Try 'plantera add --help'.")
                 else:
                     typer.echo("All plants are watered and up to date.")
+
         else:
             # Results aren't empty format table for output
             if not species:

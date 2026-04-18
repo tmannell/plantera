@@ -105,6 +105,12 @@ def test_cli_show_plants(test_db, create_species) -> None:
     assert 'Joe' in result.output
     assert 'Crassula' in result.output
 
+    # Show plant with a specific nickname
+    result == runner.invoke(app, ['show', '--name', 'Jim'])
+    assert result.exit_code == 0
+    assert 'Jim' in result.output
+    assert 'Crassula' in result.output
+
     # Show species only
     result = runner.invoke(app, ['show', '--species'])
     assert result.exit_code == 0
@@ -115,6 +121,19 @@ def test_cli_show_plants(test_db, create_species) -> None:
     result = runner.invoke(app, ['show', '--due'])
     assert result.exit_code == 0
     assert 'Joe' in result.output
+
+    # Test error cases for invalid arguments
+    result = runner.invoke(app, ['show', '--due', '--name', 'Joe'])
+    assert result.exit_code == 0
+    assert result.output == 'Error: Cannot use --name with --species or --due.\n'
+
+    result = runner.invoke(app, ['show', '--species', '--name', 'Joe'])
+    assert result.exit_code == 0
+    assert result.output == 'Error: Cannot use --name with --species or --due.\n'
+
+    result = runner.invoke(app, ['show', '--species', '--due'])
+    assert result.exit_code == 0
+    assert result.output == 'Error: Cannot use --species and --due together.\n'
 
 
 def test_cli_watered(test_db, create_species) -> None:

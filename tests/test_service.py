@@ -104,7 +104,7 @@ def test_add_plant(test_db, create_species) -> None:
     assert result == "Error: Plant 'Joe' already exists. Run 'plantera show' to see your plants."
 
 
-def test_show_species(test_db, create_species) -> None:
+def test_show_plants(test_db, create_species) -> None:
     """
     Test showing plants filtered by all, species only, and due for watering.
 
@@ -124,15 +124,26 @@ def test_show_species(test_db, create_species) -> None:
     add_plant('Jim', 'Crassula', str(date.today() - timedelta(days=30)), 14)        # overdue
 
     # Show all plants
-    plants_list = show_plants(False, False)
+    plants_list = show_plants(None, False, False)
     assert len(plants_list) == 3
 
+    # Show plant with nickname 'Jane'
+    plants_list = show_plants('Jane', False, False)
+    assert len(plants_list) == 1
+    assert (
+        plants_list[0]['nickname'] == 'Jane' and
+        plants_list[0]['plant_species_id'] == 1 and
+        plants_list[0]['next_watering'] == str(date.today() - timedelta(days=15) + timedelta(days=14)) and
+        plants_list[0]['last_watered'] == str(date.today() - timedelta(days=15)) and
+        plants_list[0]['interval'] == 14
+    )
+
     # Show only species
-    plant_list = show_plants(True, False)
+    plant_list = show_plants(None, True, False)
     assert len(plant_list) == 1
 
     # Show only plants due for watering — Joe is not due, Jane and Jim are
-    plant_list = show_plants(False, True)
+    plant_list = show_plants(None, False, True)
     assert len(plant_list) == 2
 
 

@@ -108,12 +108,14 @@ def add_plant_species(genus: str, common_name: str, care_info: str) -> Union[boo
     except Exception as e:
         return e
 
-def show_plants(species: bool, due: bool) -> Union[list, Exception]:
+def show_plants(name: str, species: bool, due: bool) -> Union[list, Exception]:
     """
-    Show plants in database. Options allow user to filter by species, their plants, or plants due for watering.
+    Show plants in database. Options allow user to filter by name, species, or plants due for watering.
 
     Parameters
     ----------
+    name : str
+        If provided, show a single plant matching the nickname
     species : bool
         If True, show plant species from plant_species table instead of my_plants
     due : bool
@@ -128,13 +130,18 @@ def show_plants(species: bool, due: bool) -> Union[list, Exception]:
     try:
         with db.get_connection() as conn:
 
-            if species is False and due is False:
+            if not name and species is False and due is False:
                 # Show all plants from my_plants
                 cursor = conn.execute(
                     "SELECT * \
                      FROM my_plants \
                      LEFT JOIN plant_species on my_plants.plant_species_id = plant_species.id \
                     ")
+            elif name:
+                # Show plant matching the provided nickname
+                cursor = conn.execute("SELECT * FROM my_plants \
+                                           LEFT JOIN plant_species on my_plants.plant_species_id = plant_species.id \
+                                           WHERE nickname = ? COLLATE NOCASE", [name])
 
             elif species:
                 # Show all plants from plant_species
@@ -182,7 +189,7 @@ def watered(nickname: str) -> tuple[bool, Union[str, date, Exception]]:
                     "UPDATE my_plants \
                      SET last_watered = date('now', 'localtime'), \
                      next_watering = ? \
-                     WHERE nickname = ?", [str(next_watering), nickname])
+                     WHERE nickname = ? COLLATE NOCASE", [str(next_watering), nickname])
 
                 return True, next_watering
 
@@ -358,7 +365,7 @@ def delete_plant(nickname: str) -> Union[bool, Exception, str]:
 
         try:
             with db.get_connection() as conn:
-                conn.execute("DELETE FROM my_plants WHERE nickname = ?", [nickname])
+                conn.execute("DELETE FROM my_plants WHERE nickname = ? COLLATE NOCASE", [nickname])
 
                 return True
 
@@ -429,7 +436,7 @@ def _get_plant(table: str, value: str) -> Optional[dict]:
         with db.get_connection() as conn:
             # Column the matching value in the ALLOWED_LOOKUPS dictionary
             column = ALLOWED_LOOKUPS[table]
-            cursor = conn.execute(f"SELECT * FROM {table} WHERE {column} = ?", [value])
+            cursor = conn.execute(f"SELECT * FROM {table} WHERE {column} = ? COLLATE NOCASE", [value])
             return cursor.fetchone()
 
     except Exception:
