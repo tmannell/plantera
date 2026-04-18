@@ -370,22 +370,19 @@ def delete_species(genus: Annotated[str, typer.Argument(help="Genus of the plant
 @app.command()
 def remind() -> None:
     """
-    Send reminders to the GUI for plants due for watering.
-
-    :return: None
+    Send a system notification for plants due for watering.
     """
     # Get plants due for watering
-    plants = service.show_plants(False, True)
-    # If plants are due for watering, send a notification
+    plants = service.show_plants(None, False, True)
     if len(plants) > 0:
         reminders = []
-        # Cycle through plants and build a list for the notification
+        # Build reminder message list from due plants
         for plant in plants:
             next_watering = date.fromisoformat(plant['next_watering'])
             reminders.append(f"Water {plant['nickname']} - {plant['common_name']} (Due: {humanize.naturalday(next_watering)})")
-        # Set title and make list into a string.
         title = "Water Reminder"
         message = '\n'.join(reminders)
+        typer.echo(message)
     
         if sys.platform == "linux":
             # If on Linux, use notify-send to send the notification. Plyer doesn't respect the timeout parameter.
@@ -394,6 +391,8 @@ def remind() -> None:
             # If on Windows or macOS, use the plyer notification module.
             from plyer import notification
             notification.notify(title=title, message=message, timeout=10)
+    else:
+        typer.echo("No plants are due for watering.")
 
 
 if __name__ == "__main__":
