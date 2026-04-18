@@ -224,6 +224,30 @@ def test_update_plant(test_db, create_species) -> None:
     assert plant['next_watering'] == '2026-04-30'
     assert plant['interval'] == 30
 
+    # Update last_watered only — next_watering should auto-calculate using existing interval
+    result = update_plant('James', None, None, '2026-05-01', None, None)
+    assert result is True
+
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM my_plants where nickname = 'James'")
+        plant = cursor.fetchone()
+
+    assert plant['last_watered'] == '2026-05-01'
+    assert plant['next_watering'] == str(date.fromisoformat('2026-05-01') + timedelta(days=plant['interval']))
+
+    # Update last_watered and interval together — next_watering should use the new interval
+    result = update_plant('James', None, None, '2026-05-10', None, 7)
+    assert result is True
+
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM my_plants where nickname = 'James'")
+        plant = cursor.fetchone()
+
+    assert plant['last_watered'] == '2026-05-10'
+    assert plant['next_watering'] == str(date.fromisoformat('2026-05-10') + timedelta(days=7))
+
     # Test error case — non-existent species
     result = update_plant('James', None, 'pastry', None, None, None)
     assert str(result) == "Error: Species 'pastry' not found. Run 'plantera show --species' to see available species."
