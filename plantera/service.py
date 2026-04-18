@@ -254,6 +254,11 @@ def update_plant(nickname_to_update: str, nickname: str = None, genus: str = Non
         if last_watered:
             fields.append('last_watered = ?')
             values.append(last_watered)
+            if not next_watering:
+                fields.append('next_watering = ?')
+                effective_interval = interval if interval else my_plant['interval']
+                calculated_date = date.fromisoformat(last_watered) + timedelta(days=effective_interval)
+                values.append(str(calculated_date))
 
         if next_watering:
             fields.append('next_watering = ?')
