@@ -277,7 +277,7 @@ def update_plant(nickname_to_update: str, nickname: str = None, genus: str = Non
         try:
             with db.get_connection() as conn:
                 conn.execute(
-                    f"UPDATE my_plants SET {', '.join(fields)} where nickname = ?", values
+                    f"UPDATE my_plants SET {', '.join(fields)} WHERE nickname = ? COLLATE NOCASE", values
                 )
 
                 return True
