@@ -14,7 +14,7 @@ import typer
 
 app = typer.Typer(add_completion=False)
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 
 BANNER = """[green]
   __
