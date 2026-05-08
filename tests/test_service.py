@@ -10,6 +10,9 @@ from plantera.service import update_species
 from plantera.service import delete_species
 from plantera.service import delete_plant
 from plantera.service import _validate_inputs
+from plantera.service import _calculate_interval
+from plantera.service import config_setting
+from plantera.service import get_settings
 
 
 def test_db_init(test_db) -> None:
@@ -162,7 +165,7 @@ def test_watered(test_db, create_species) -> None:
     species = create_species()
     assert species is True
 
-    result = add_plant('Joe', 'Crassula', '2026-04-01', 14)
+    result = add_plant('Joe', 'Crassula', str(date.today()), 14)
     assert result is True
 
     # Mark as watered and verify the returned next watering date
@@ -383,3 +386,90 @@ def test_validate_inputs() -> None:
     # Invalid interval
     result = _validate_inputs(nickname='joe', genus='Crassula', common_name="Jade", last_watered='2026-04-01', next_watering='2026-04-15', interval=-2)
     assert result == "Error: Interval must be a positive number."
+
+
+def test_config_setting(test_db) -> None:
+    """
+    Test config_setting for upsert, overwrite, and delete behaviour.
+
+    Parameters
+    ----------
+    test_db : fixture
+        Pytest fixture providing an isolated temporary database.
+    """
+    # Upsert a new setting
+    result = config_setting('auto_interval', '0.4', False)
+    assert result is True
+
+    with db.get_connection() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = 'auto_interval'").fetchone()
+    assert row['value'] == '0.4'
+
+    # Overwrite an existing setting
+    result = config_setting('auto_interval', '0.3', False)
+    assert result is True
+
+    with db.get_connection() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = 'auto_interval'").fetchone()
+    assert row['value'] == '0.3'
+
+    # Delete the setting
+    result = config_setting('auto_interval', None, True)
+    assert result is True
+
+    with db.get_connection() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = 'auto_interval'").fetchone()
+    assert row is None
+
+
+def test_get_settings(test_db) -> None:
+    """
+    Test get_settings returns an empty list when no settings exist and all rows when they do.
+
+    Parameters
+    ----------
+    test_db : fixture
+        Pytest fixture providing an isolated temporary database.
+    """
+    # Empty settings table
+    result = get_settings()
+    assert isinstance(result, list)
+    assert len(result) == 0
+
+    # Add two settings and verify both are returned
+    config_setting('auto_interval', '0.4', False)
+    config_setting('diagnose_api_key', 'sk-abc123', False)
+
+    result = get_settings()
+    assert isinstance(result, list)
+    assert len(result) == 2
+
+    keys = [row['key'] for row in result]
+    assert 'auto_interval' in keys
+    assert 'diagnose_api_key' in keys
+
+
+def test_calculate_interval(test_db) -> None:
+    """
+    Test _calculate_interval for EMA disabled, EMA enabled, and same-day guard.
+
+    Parameters
+    ----------
+    test_db : fixture
+        Pytest fixture providing an isolated temporary database.
+    """
+    last_watered = str(date.today() - timedelta(days=20))
+
+    # EMA disabled — no auto_interval row, interval returned unchanged
+    result = _calculate_interval(14, last_watered)
+    assert result == 14
+
+    # EMA enabled — alpha 0.4, gap 20 days, current interval 14
+    # expected: round(0.4 * 20 + 0.6 * 14) = round(8 + 8.4) = round(16.4) = 16
+    config_setting('auto_interval', '0.4', False)
+    result = _calculate_interval(14, last_watered)
+    assert result == 16
+
+    # Same-day guard — gap is 0, interval returned unchanged even with EMA on
+    result = _calculate_interval(14, str(date.today()))
+    assert result == 14
