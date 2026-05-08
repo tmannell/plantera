@@ -31,6 +31,11 @@ def db_init():
                          next_watering TEXT, \
                          interval INTEGER)")
 
+            conn.execute("CREATE TABLE IF NOT EXISTS settings ( \
+                         id INTEGER PRIMARY KEY AUTOINCREMENT, \
+                         key TEXT UNIQUE COLLATE NOCASE, \
+                         value TEXT)")
+
         except Exception as e:
             return e
 

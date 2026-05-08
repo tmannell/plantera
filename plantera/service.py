@@ -184,12 +184,14 @@ def watered(nickname: str) -> tuple[bool, Union[str, date, Exception]]:
         try:
             with db.get_connection() as conn:
                 # Update the next watering date, auto-calculate the next watering date based on the interval
-                next_watering = date.today() + timedelta(days=my_plant['interval'])
+                new_interval = _calculate_interval(my_plant['interval'], my_plant['last_watered'])
+                next_watering = date.today() + timedelta(days=new_interval)
                 conn.execute(
                     "UPDATE my_plants \
-                     SET last_watered = date('now', 'localtime'), \
-                     next_watering = ? \
-                     WHERE nickname = ? COLLATE NOCASE", [str(next_watering), nickname])
+                         SET last_watered = date('now', 'localtime'), \
+                         next_watering = ?, \
+                         interval = ? \
+                         WHERE nickname = ? COLLATE NOCASE", [str(next_watering), new_interval, nickname])
 
                 return True, next_watering
 
@@ -415,6 +417,59 @@ def delete_species(genus: str) -> Union[bool, Exception, str]:
         except Exception as e:
             return e
 
+def config_setting(setting: str, value: Optional[str], delete_setting: bool) -> Union[bool, Exception]:
+    """
+    Upsert or delete a setting in the settings table.
+
+    Parameters
+    ----------
+    setting : str
+        The setting key to update or delete.
+    value : str or None
+        The value to set. Ignored when delete_setting is True.
+    delete_setting : bool
+        If True, delete the setting row instead of upserting.
+
+    Returns
+    -------
+    bool or Exception
+        True on success, Exception on failure.
+    """
+
+    # Delete or save the config setting.
+    with db.get_connection() as conn:
+
+        try:
+            if delete_setting:
+                conn.execute(f"DELETE FROM settings WHERE key = ?", [setting])
+                return True
+
+            conn.execute(f"INSERT INTO settings (key, value) VALUES (?, ?) \
+                               ON CONFLICT(key) DO UPDATE SET value = excluded.value", [setting, value])
+            return True
+
+        except Exception as e:
+            return e
+
+def get_settings() -> Union[list, Exception]:
+    """
+    Retrieve all rows from the settings table.
+
+    Returns
+    -------
+    list or Exception
+        List of settings rows on success, Exception on failure.
+    """
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM settings")
+
+            return cursor.fetchall()
+
+    except Exception as e:
+        return e
+
+
 def _get_plant(table: str, value: str) -> Optional[dict]:
     """
     Internal helper to retrieve a single row from my_plants or plant_species.
@@ -493,4 +548,52 @@ def _validate_inputs(nickname: str = None, genus: str = None, common_name: str =
         return "Error: Interval must be a positive number."
 
     return True
+
+
+def _calculate_interval(current_interval: int, last_watered: str) -> Union[int, Exception]:
+    """
+    Calculate a new watering interval using EMA against the actual gap since last watering.
+
+    Reads the ema_alpha from the settings table (key: 'auto_interval'). If the setting is
+    absent, EMA is disabled and the current interval is returned unchanged. Same-day
+    waterings (gap < 1 day) are also skipped to prevent accidental shrinkage.
+
+    Parameters
+    ----------
+    current_interval : int
+        The plant's existing watering interval in days.
+    last_watered : str
+        The date the plant was last watered in YYYY-MM-DD format.
+
+    Returns
+    -------
+    int or Exception
+        The updated interval in days, or Exception on failure.
+    """
+
+    # Get the auto interval ema_alpha value
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.execute("SELECT value FROM settings WHERE key = 'auto_interval'")
+
+            row = cursor.fetchone()
+            if row is None:
+                return current_interval
+
+        ema_value = float(row[0])
+
+    except Exception as e:
+        return e
+
+
+    # Determine days since watered.
+    days_since_watered = (date.today() - date.fromisoformat(last_watered)).days
+
+    # Safety, don't modify current interval is watered was triggered on the same plant twice in one day.
+    if days_since_watered < 1:
+        return current_interval
+
+    # Return and calculate the current interval.
+    return round(ema_value * days_since_watered + (1 - ema_value) * current_interval)
+
 

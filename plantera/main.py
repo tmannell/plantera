@@ -27,13 +27,16 @@ BANNER = """[green]
   ||
 [/green]"""
 
+ALLOWED_SETTINGS = ["auto_interval", "diagnose_api_key"]
+
 def version_callback(value: bool) -> None:
     """
-    Callback function for the --version option.
+    Callback for the --version flag. Prints the version and exits.
 
-    :param value: bool
-        True if the --version option is provided, False otherwise.
-    :return:  None
+    Parameters
+    ----------
+    value : bool
+        True if --version was passed.
     """
     if value:
         typer.echo(f"Plantera v{__version__}")
@@ -393,6 +396,86 @@ def remind() -> None:
             notification.notify(title=title, message=message, timeout=10)
     else:
         typer.echo("No plants are due for watering.")
+
+@app.command()
+def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to enable or update (auto_interval, diagnose_api_key [CLAUDE])")] = None,
+           value: Annotated[Optional[str], typer.Option(help="Set the value of the setting")] = None,
+           delete: Annotated[bool, typer.Option(help="Delete the setting")] = False
+) -> None:
+    """
+    View or update Plantera settings.
+
+    Run without arguments to display all current settings. Provide a setting name
+    to update or delete it.
+
+    Parameters
+    ----------
+    setting : str, optional
+        The setting key to update or delete. Allowed values: auto_interval, diagnose_api_key.
+    value : str, optional
+        The value to set for the given setting.
+    delete : bool
+        If True, delete the setting row rather than updating it.
+    """
+
+    # Validate inputs.
+    # value and delete cannot be used together.
+    if value and delete:
+        typer.echo("Error: Cannot use --value and --delete together.")
+        return
+
+    # If config is run without arguments, return setting values and print a table.
+    if setting is None:
+        result = service.get_settings()
+
+        if result is not None:
+            if isinstance(result, list):
+                if len(result) == 0:
+                    typer.echo("There are no settings configured.")
+                else:
+                    # Results aren't empty format table for output
+                    table = Table(title="\nSettings", header_style="bold green", border_style="green", box=ROUNDED,
+                                      row_styles=["", "bold"])
+
+                    table.add_column("Setting Name")
+                    table.add_column("Value")
+
+
+                    for setting in result:
+                        table.add_row(
+                            setting['key'],
+                            setting['value']
+                        )
+
+                    Console().print(table)
+            else:
+                typer.echo(result)
+
+            return
+
+
+    # Setting value must exist and be in the ALLOWED_SETTINGS list.
+    if setting not in ALLOWED_SETTINGS:
+        typer.echo(f"Error: Invalid setting. Allowed settings are: {', '.join(ALLOWED_SETTINGS)}")
+        return
+
+    # diagnose_api_key requires a value.
+    if setting == "diagnose_api_key" and value is None:
+        typer.echo("Error: diagnose_api_key requires a value.")
+        return
+
+    # auto_interval - set default value if not set.
+    if setting == "auto_interval" and value is None:
+        value = '0.4'
+
+    result = service.config_setting(setting, value, delete)
+
+    if result is True:
+        typer.echo(f"Setting '{setting}' updated successfully!")
+    else:
+        typer.echo(str(result))
+
+
 
 
 if __name__ == "__main__":

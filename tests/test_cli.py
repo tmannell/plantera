@@ -286,6 +286,62 @@ def test_cli_delete_species(test_db, create_species) -> None:
     assert result.exit_code == 0
     assert "Species 'Crassula' deleted successfully!\n" in result.output
 
+def test_cli_config(test_db) -> None:
+    """
+    Test the config CLI command for no-args display, upsert, delete, and validation errors.
+
+    Parameters
+    ----------
+    test_db : fixture
+        Pytest fixture providing an isolated temporary database.
+    """
+    # No args with empty settings table
+    result = runner.invoke(app, ['config'])
+    assert result.exit_code == 0
+    assert result.output == "There are no settings configured.\n"
+
+    # Set auto_interval with default value
+    result = runner.invoke(app, ['config', 'auto_interval'])
+    assert result.exit_code == 0
+    assert result.output == "Setting 'auto_interval' updated successfully!\n"
+
+    # No args shows the settings table
+    result = runner.invoke(app, ['config'])
+    assert result.exit_code == 0
+    assert 'auto_interval' in result.output
+    assert '0.4' in result.output
+
+    # Set auto_interval with a custom value
+    result = runner.invoke(app, ['config', 'auto_interval', '--value', '0.3'])
+    assert result.exit_code == 0
+    assert result.output == "Setting 'auto_interval' updated successfully!\n"
+
+    # Set diagnose_api_key with a value
+    result = runner.invoke(app, ['config', 'diagnose_api_key', '--value', 'sk-abc123'])
+    assert result.exit_code == 0
+    assert result.output == "Setting 'diagnose_api_key' updated successfully!\n"
+
+    # Delete a setting
+    result = runner.invoke(app, ['config', 'auto_interval', '--delete'])
+    assert result.exit_code == 0
+    assert result.output == "Setting 'auto_interval' updated successfully!\n"
+
+    # Test error case — diagnose_api_key requires a value
+    result = runner.invoke(app, ['config', 'diagnose_api_key'])
+    assert result.exit_code == 0
+    assert result.output == "Error: diagnose_api_key requires a value.\n"
+
+    # Test error case — invalid setting
+    result = runner.invoke(app, ['config', 'bad_setting'])
+    assert result.exit_code == 0
+    assert result.output == f"Error: Invalid setting. Allowed settings are: {', '.join(['auto_interval', 'diagnose_api_key'])}\n"
+
+    # Test error case — --value and --delete together
+    result = runner.invoke(app, ['config', 'auto_interval', '--value', '0.4', '--delete'])
+    assert result.exit_code == 0
+    assert result.output == "Error: Cannot use --value and --delete together.\n"
+
+
 def test_cli_remind(test_db, create_species) -> None:
     """
     Test the remind CLI command for no plants due and plants due cases.
