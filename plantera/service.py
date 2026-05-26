@@ -1,3 +1,7 @@
+import anthropic
+import base64
+import json
+import mimetypes
 import sqlite3
 from datetime import datetime, timedelta, date
 from typing import Optional, Union
@@ -5,9 +9,9 @@ from typing import Optional, Union
 import plantera.db as db
 
 ALLOWED_LOOKUPS = {
-        'my_plants': 'nickname',
-        'plant_species': 'genus'
-    }
+    'my_plants': 'nickname',
+    'plant_species': 'genus'
+}
 
 def add_plant(nickname: str, genus: str, last_watered: str, interval: int) -> Union[
     bool, Exception, str]:
@@ -53,16 +57,18 @@ def add_plant(nickname: str, genus: str, last_watered: str, interval: int) -> Un
             last_watered = datetime.strptime(last_watered, "%Y-%m-%d")
             # Calculate the next watering date based on the last watered date and the interval
             next_watering = last_watered + timedelta(days=interval)
-    
+
             # Open DB connection
             with db.get_connection() as conn:
                 # Insert a new user plant into the plants table
-                conn.execute(
+                cursor = conn.execute(
                     "INSERT INTO my_plants (nickname, plant_species_id, last_watered, next_watering, interval) VALUES (?, ?, ?, ?, ?)",
                     (nickname, plant_species_id, last_watered.strftime('%Y-%m-%d'), next_watering.strftime('%Y-%m-%d'), interval)
                 )
 
-                # Return True if the plant was added successfully
+                # Log watering if it's present.
+                _log_watering(conn, cursor.lastrowid, last_watered.strftime('%Y-%m-%d'))
+
                 return True
         except sqlite3.IntegrityError:
             return f"Error: Plant '{nickname}' already exists. Run 'plantera show' to see your plants."
@@ -172,7 +178,7 @@ def watered(nickname: str) -> tuple[bool, Union[str, date, Exception]]:
     tuple[bool, str or date or Exception]
         (True, next_watering date) on success, (False, error message or Exception) on failure.
     """
-    
+
     # Check if the plant exists
     my_plant = _get_plant('my_plants', nickname)
 
@@ -192,6 +198,8 @@ def watered(nickname: str) -> tuple[bool, Union[str, date, Exception]]:
                          next_watering = ?, \
                          interval = ? \
                          WHERE nickname = ? COLLATE NOCASE", [str(next_watering), new_interval, nickname])
+
+                _log_watering(conn, my_plant['id'], str(date.today()))
 
                 return True, next_watering
 
@@ -282,6 +290,9 @@ def update_plant(nickname_to_update: str, nickname: str = None, genus: str = Non
                     f"UPDATE my_plants SET {', '.join(fields)} WHERE nickname = ? COLLATE NOCASE", values
                 )
 
+                if last_watered:
+                    _log_watering(conn, my_plant['id'], last_watered, update=True)
+
                 return True
 
         except Exception as e:
@@ -308,7 +319,7 @@ def update_species(genus_to_update: str, genus: str = None, common_name: str = N
     bool or Exception or str
         True on success, error message string on failure
     """
-    
+
     # Retrieve the plant species to update
     species = _get_plant('plant_species', genus_to_update)
     if species is None:
@@ -320,14 +331,14 @@ def update_species(genus_to_update: str, genus: str = None, common_name: str = N
         validated = _validate_inputs(genus=genus, common_name=common_name)
         if validated is not True:
             return validated
-        
+
         fields = []
         values = []
-        
+
         if genus:
             fields.append('genus = ?')
             values.append(genus)
-            
+
         if common_name:
             fields.append('common_name = ?')
             values.append(common_name)
@@ -397,7 +408,7 @@ def delete_species(genus: str) -> Union[bool, Exception, str]:
     bool or Exception or str
         True on success, error message string on failure
     """
-    
+
     # Check if the plant species exists
     species = _get_plant('plant_species', genus)
     if species is None:
@@ -441,11 +452,11 @@ def config_setting(setting: str, value: Optional[str], delete_setting: bool) -> 
 
         try:
             if delete_setting:
-                conn.execute(f"DELETE FROM settings WHERE key = ?", [setting])
+                conn.execute("DELETE FROM settings WHERE key = ?", [setting])
                 return True
 
-            conn.execute(f"INSERT INTO settings (key, value) VALUES (?, ?) \
-                               ON CONFLICT(key) DO UPDATE SET value = excluded.value", [setting, value])
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) \
+                        ON CONFLICT(key) DO UPDATE SET value = excluded.value", [setting, value])
             return True
 
         except Exception as e:
@@ -469,6 +480,117 @@ def get_settings() -> Union[list, Exception]:
     except Exception as e:
         return e
 
+def diagnose(nickname, condition, picture_path, update_care_info):
+
+    # Get API Key
+    with db.get_connection() as conn:
+        cursor = conn.execute("SELECT value FROM settings WHERE key = 'diagnose_api_key'")
+        api_key = cursor.fetchone()[0]
+    
+    # Get the data on the plant we are diagnosing.
+    plant = _get_plant('my_plants', nickname)
+    
+    # Throw an error if the plant doesn't exist.
+    if plant is None:
+        return f"Error: Plant '{nickname}' not found. Run 'plantera show' to see your plants."
+    
+    # Declare the data dict we will be using to form the prompt.
+    data = {}
+    if update_care_info is True:
+        data['genus'] = plant['genus']
+        data['common_name'] = plant['common_name']
+        data['current_care_info'] = plant['care_info']
+
+        # Create the prompt we will be using to ask Claude.
+        prompt = [
+            {
+                "type": "text",
+                "text": (
+                    f"Review the following care info for {data['common_name']} ({data['genus']}):\n\n"
+                    f"{data['current_care_info']}\n\n"
+                    "If the care info is accurate and complete, return exactly:\n"
+                    "{\"care_info\": \"<original text>\", \"changed\": false}\n\n"
+                    "If it needs updating, keep response concise, format for terminal\n"
+                    "return exactly:\n"
+                    "{\"care_info\": \"<updated text>\", \"changed\": true}\n\n"
+                    "Return only valid JSON, no markdown formatting, no preamble or explanation."
+                )
+            }
+        ]
+
+        response = json.loads(_ask_claude(prompt, api_key))
+
+        if response['changed']:
+            with db.get_connection() as conn:
+                conn.execute(
+                    "UPDATE plant_species SET care_info = ? WHERE genus = ? COLLATE NOCASE",
+                    [response['care_info'], plant['genus']]
+                )
+            return f"Care info updated\n\n{response['care_info']}"
+        else:
+            return "Care info is already up to date."
+
+    else:
+        data['nickname'] = nickname
+        data['genus'] = plant['genus']
+        data['common_name'] = plant['common_name']
+        data['last_watered'] = plant['last_watered']
+        data['next_watering'] = plant['next_watering']
+        data['interval'] = plant['interval']
+        data['plant_id'] = plant['id']
+        data['condition'] = condition
+                
+        with db.get_connection() as conn:
+            cursor = conn.execute("SELECT watered_date FROM watered_log WHERE plant_id = ? ORDER BY id DESC LIMIT 10", [data['plant_id']])
+            watering_dates = cursor.fetchall()
+
+        plant_info = "Plant Information:\n"
+        plant_info += "\n".join(f"{k}: {v}" for k, v in data.items())
+        plant_info += "The last 10 watering dates were:\n"
+        plant_info += "watering_dates:" + ", ".join(f"{row['watered_date']}" for row in watering_dates) + "\n"
+        
+
+        # picture handling
+        if picture_path is not None:
+            with open(picture_path, "rb") as file:
+                image_data = base64.standard_b64encode(file.read()).decode("utf-8")
+            
+            prompt = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mimetypes.guess_type(picture_path)[0],
+                        "data": image_data
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        f"Please diagnose my plant with the following information:\n{plant_info}\n\n"
+                        "Provide a complete diagnosis and all recommendations in one response. "
+                        "Do not ask follow-up questions. "
+                        "Format your response for terminal output using plain text only — "
+                        "no markdown headers, no emoji, use simple dashes for bullet points."
+                    )
+                }
+            ]
+        else:
+            prompt = [
+                {
+                    "type": "text",
+                    "text": (
+                        f"Please diagnose my plant with the following information:\n{plant_info}\n\n"
+                        "Provide a complete diagnosis and all recommendations in one response. "
+                        "Do not ask follow-up questions. "
+                        "Format your response for terminal output using plain text only — "
+                        "no markdown headers, no emoji, use simple dashes for bullet points."
+                    )
+                }
+            ]
+            
+    
+        return _ask_claude_stream(prompt, api_key)
 
 def _get_plant(table: str, value: str) -> Optional[dict]:
     """
@@ -494,9 +616,16 @@ def _get_plant(table: str, value: str) -> Optional[dict]:
 
     try:
         with db.get_connection() as conn:
-            # Column the matching value in the ALLOWED_LOOKUPS dictionary
             column = ALLOWED_LOOKUPS[table]
-            cursor = conn.execute(f"SELECT * FROM {table} WHERE {column} = ? COLLATE NOCASE", [value])
+            if table == 'my_plants':
+                cursor = conn.execute(
+                    f"SELECT my_plants.*, plant_species.genus, plant_species.common_name, plant_species.care_info \
+                    FROM my_plants \
+                    LEFT JOIN plant_species ON my_plants.plant_species_id = plant_species.id \
+                    WHERE my_plants.{column} = ? COLLATE NOCASE", [value]
+                )
+            else:
+                cursor = conn.execute(f"SELECT * FROM {table} WHERE {column} = ? COLLATE NOCASE", [value])
             return cursor.fetchone()
 
     except Exception:
@@ -595,5 +724,53 @@ def _calculate_interval(current_interval: int, last_watered: str) -> Union[int, 
 
     # Return and calculate the current interval.
     return round(ema_value * days_since_watered + (1 - ema_value) * current_interval)
+
+def _log_watering(conn, plant_id: int, watered_date: str, update: bool = False) -> None:
+    if update:
+        # Check if the plant has been watered before if it hasn't you can't update the last watered date
+        count = conn.execute(
+            "SELECT COUNT(*) FROM watered_log WHERE plant_id = ?", [plant_id]
+        )
+        if count.fetchone()[0] == 0:
+            raise ValueError("Error: Cannot update watering log: this plant has not been watered yet.")
+
+        conn.execute(
+            "UPDATE watered_log SET watered_date = ? \
+             WHERE id = (SELECT id FROM watered_log WHERE plant_id = ? ORDER BY id DESC LIMIT 1)",
+            [watered_date, plant_id]
+        )
+    else:
+        conn.execute(
+            "INSERT INTO watered_log (plant_id, watered_date) VALUES (?, ?)",
+            [plant_id, watered_date]
+        )
+
+def _ask_claude(prompt, api_key):
+    
+    client = anthropic.Anthropic(api_key=api_key)
+
+    message = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=1000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    return message.content[0].text
+    
+def _ask_claude_stream(prompt, api_key):
+    
+    client = anthropic.Anthropic(api_key=api_key)
+
+    with client.messages.stream(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=1000,
+        messages=[{"role": "user", "content": prompt}],
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
+        
+
+        
+
 
 
