@@ -88,7 +88,7 @@ def test_cli_show_plants(test_db, create_species) -> None:
 
     # Add a plant that is not yet due — next_watering will be 14 days from today
     future_watering_date = str(date.today() + timedelta(days=14))
-    result = add_plant('Jim', 'Crassula', future_watering_date, 14)
+    result = add_plant('Jim', 'Crassula', future_watering_date, 14, '')
     assert result is True
 
     # Verify all-watered message when no plants are overdue
@@ -98,7 +98,7 @@ def test_cli_show_plants(test_db, create_species) -> None:
 
     # Add an overdue plant — last watered 14 days ago
     overdue_watering_date = str(date.today() - timedelta(days=14))
-    result = add_plant('Joe', 'Crassula', overdue_watering_date, 14)
+    result = add_plant('Joe', 'Crassula', overdue_watering_date, 14, '')
     assert result is True
 
     # Show all plants
@@ -152,7 +152,7 @@ def test_cli_watered(test_db, create_species) -> None:
     # Set up species and plant
     result = create_species()
     assert result is True
-    result = add_plant('Joe', 'Crassula', '2026-03-01', 14)
+    result = add_plant('Joe', 'Crassula', '2026-03-01', 14, '')
     assert result is True
 
     # Mark as watered and verify the output includes the next watering date
@@ -184,7 +184,7 @@ def test_cli_update_plant(test_db, create_species) -> None:
     result = create_species(2)
     assert result is True
 
-    result = add_plant('Joe', 'Crassula', '2026-03-01', 14)
+    result = add_plant('Joe', 'Crassula', '2026-03-01', 14, '')
     assert result is True
 
     # Update multiple fields successfully
@@ -243,7 +243,7 @@ def test_cli_delete_plant(test_db, create_species) -> None:
     # Set up species and plant
     result = create_species()
     assert result is True
-    result = add_plant('Joe', 'Crassula', '2026-03-01', 14)
+    result = add_plant('Joe', 'Crassula', '2026-03-01', 14, '')
     assert result is True
 
     # Test cancelling the deletion prompt
@@ -361,7 +361,7 @@ def test_cli_remind(test_db, create_species) -> None:
     # Set up an overdue plant
     result = create_species()
     assert result is True
-    result = add_plant('Joe', 'Crassula', str(date.today() - timedelta(days=14)), 14)
+    result = add_plant('Joe', 'Crassula', str(date.today() - timedelta(days=14)), 14, '')
     assert result is True
 
     # Test with overdue plant — mock notify-send to avoid firing a real notification

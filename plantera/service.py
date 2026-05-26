@@ -13,7 +13,7 @@ ALLOWED_LOOKUPS = {
     'plant_species': 'genus'
 }
 
-def add_plant(nickname: str, genus: str, last_watered: str, interval: int) -> Union[
+def add_plant(nickname: str, genus: str, last_watered: str, interval: int, environment: str) -> Union[
     bool, Exception, str]:
     """
     Adds a plant to the database.
@@ -62,8 +62,8 @@ def add_plant(nickname: str, genus: str, last_watered: str, interval: int) -> Un
             with db.get_connection() as conn:
                 # Insert a new user plant into the plants table
                 cursor = conn.execute(
-                    "INSERT INTO my_plants (nickname, plant_species_id, last_watered, next_watering, interval) VALUES (?, ?, ?, ?, ?)",
-                    (nickname, plant_species_id, last_watered.strftime('%Y-%m-%d'), next_watering.strftime('%Y-%m-%d'), interval)
+                    "INSERT INTO my_plants (nickname, plant_species_id, last_watered, next_watering, interval, environment) VALUES (?, ?, ?, ?, ?, ?)",
+                    (nickname, plant_species_id, last_watered.strftime('%Y-%m-%d'), next_watering.strftime('%Y-%m-%d'), interval, environment)
                 )
 
                 # Log watering if it's present.
@@ -207,7 +207,7 @@ def watered(nickname: str) -> tuple[bool, Union[str, date, Exception]]:
             return False, e
 
 def update_plant(nickname_to_update: str, nickname: str = None, genus: str = None, last_watered: str = None,
-                 next_watering: str = None, interval: int = None) -> Union[bool, Exception, str]:
+                 next_watering: str = None, interval: int = None, environment: str = None) -> Union[bool, Exception, str]:
     """
     Update a plant from the my_plants table.
 
@@ -277,6 +277,10 @@ def update_plant(nickname_to_update: str, nickname: str = None, genus: str = Non
         if interval:
             fields.append('interval = ?')
             values.append(interval)
+
+        if environment:
+            fields.append('environment = ?')
+            values.append(environment)
 
         values.append(nickname_to_update)
 
@@ -480,7 +484,7 @@ def get_settings() -> Union[list, Exception]:
     except Exception as e:
         return e
 
-def diagnose(nickname, condition, picture_path, update_care_info):
+def update_care_info(genus):
 
     # Get API Key
     with db.get_connection() as conn:
@@ -488,109 +492,99 @@ def diagnose(nickname, condition, picture_path, update_care_info):
         api_key = cursor.fetchone()[0]
     
     # Get the data on the plant we are diagnosing.
-    plant = _get_plant('my_plants', nickname)
+    species = _get_plant('plant_species', genus)
     
     # Throw an error if the plant doesn't exist.
+    if species is None:
+        return f"Error: Species '{genus}' not found. Run 'plantera show --species' to see available species."
+
+    prompt = [
+        {
+            "type": "text",
+            "text": (
+                f"Review the following care info for {species['common_name']} ({species['genus']}):\n\n"
+                f"{species['care_info']}\n\n"
+                "If the care info is accurate and complete, return exactly:\n"
+                "{\"care_info\": \"<original text>\", \"changed\": false}\n\n"
+                "If it needs updating, keep response concise, format for terminal\n"
+                "return exactly:\n"
+                "{\"care_info\": \"<updated text>\", \"changed\": true}\n\n"
+                "Return only valid JSON, no markdown formatting, no preamble or explanation."
+            )
+        }
+    ]
+
+    response = json.loads(_ask_claude(prompt, api_key))
+
+    if response['changed']:
+        with db.get_connection() as conn:
+            conn.execute(
+                "UPDATE plant_species SET care_info = ? WHERE id = ?",
+                [response['care_info'], species['id']]
+            )
+        return f"Care info updated\n\n{response['care_info']}"
+    else:
+        return "Care info is already up to date."
+
+
+def diagnose(nickname, condition, picture_path):
+
+    with db.get_connection() as conn:
+        cursor = conn.execute("SELECT value FROM settings WHERE key = 'diagnose_api_key'")
+        api_key = cursor.fetchone()[0]
+
+    plant = _get_plant('my_plants', nickname)
     if plant is None:
         return f"Error: Plant '{nickname}' not found. Run 'plantera show' to see your plants."
-    
-    # Declare the data dict we will be using to form the prompt.
-    data = {}
-    if update_care_info is True:
-        data['genus'] = plant['genus']
-        data['common_name'] = plant['common_name']
-        data['current_care_info'] = plant['care_info']
 
-        # Create the prompt we will be using to ask Claude.
-        prompt = [
-            {
-                "type": "text",
-                "text": (
-                    f"Review the following care info for {data['common_name']} ({data['genus']}):\n\n"
-                    f"{data['current_care_info']}\n\n"
-                    "If the care info is accurate and complete, return exactly:\n"
-                    "{\"care_info\": \"<original text>\", \"changed\": false}\n\n"
-                    "If it needs updating, keep response concise, format for terminal\n"
-                    "return exactly:\n"
-                    "{\"care_info\": \"<updated text>\", \"changed\": true}\n\n"
-                    "Return only valid JSON, no markdown formatting, no preamble or explanation."
-                )
+    data = dict()
+    data['nickname'] = nickname
+    data['genus'] = plant['genus']
+    data['common_name'] = plant['common_name']
+    data['last_watered'] = plant['last_watered']
+    data['next_watering'] = plant['next_watering']
+    data['interval'] = plant['interval']
+
+    if plant['environment']:
+        data['environment'] = plant['environment']
+
+    data['condition'] = condition
+
+    with db.get_connection() as conn:
+        cursor = conn.execute("SELECT watered_date FROM watered_log WHERE plant_id = ? ORDER BY id DESC LIMIT 10", [plant['id']])
+        watering_dates = cursor.fetchall()
+
+    plant_info = "Plant Information:\n"
+    plant_info += "\n".join(f"{k}: {v}" for k, v in data.items())
+    plant_info += "\nThe last 10 watering dates were:\n"
+    plant_info += ", ".join(f"{row['watered_date']}" for row in watering_dates) + "\n"
+
+    prompt = []
+    if picture_path is not None:
+        with open(picture_path, "rb") as file:
+            image_data = base64.standard_b64encode(file.read()).decode("utf-8")
+        prompt.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": mimetypes.guess_type(picture_path)[0],
+                "data": image_data
             }
-        ]
+        })
 
-        response = json.loads(_ask_claude(prompt, api_key))
+    prompt.append({
+        "type": "text",
+        "text": (
+            f"Please diagnose my plant with the following information:\n{plant_info}\n\n"
+            "Provide a complete diagnosis and all recommendations in one response. "
+            "Comment specifically on watered dates and environmental factors if they exist in data. "
+            "Do not ask follow-up questions. "
+            "Format your response for terminal output using plain text only, "
+            "no markdown headers, no emoji, use simple dashes for bullet points."
+        )
+    })
 
-        if response['changed']:
-            with db.get_connection() as conn:
-                conn.execute(
-                    "UPDATE plant_species SET care_info = ? WHERE genus = ? COLLATE NOCASE",
-                    [response['care_info'], plant['genus']]
-                )
-            return f"Care info updated\n\n{response['care_info']}"
-        else:
-            return "Care info is already up to date."
-
-    else:
-        data['nickname'] = nickname
-        data['genus'] = plant['genus']
-        data['common_name'] = plant['common_name']
-        data['last_watered'] = plant['last_watered']
-        data['next_watering'] = plant['next_watering']
-        data['interval'] = plant['interval']
-        data['plant_id'] = plant['id']
-        data['condition'] = condition
-                
-        with db.get_connection() as conn:
-            cursor = conn.execute("SELECT watered_date FROM watered_log WHERE plant_id = ? ORDER BY id DESC LIMIT 10", [data['plant_id']])
-            watering_dates = cursor.fetchall()
-
-        plant_info = "Plant Information:\n"
-        plant_info += "\n".join(f"{k}: {v}" for k, v in data.items())
-        plant_info += "The last 10 watering dates were:\n"
-        plant_info += "watering_dates:" + ", ".join(f"{row['watered_date']}" for row in watering_dates) + "\n"
-        
-
-        # picture handling
-        if picture_path is not None:
-            with open(picture_path, "rb") as file:
-                image_data = base64.standard_b64encode(file.read()).decode("utf-8")
-            
-            prompt = [
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": mimetypes.guess_type(picture_path)[0],
-                        "data": image_data
-                    }
-                },
-                {
-                    "type": "text",
-                    "text": (
-                        f"Please diagnose my plant with the following information:\n{plant_info}\n\n"
-                        "Provide a complete diagnosis and all recommendations in one response. "
-                        "Do not ask follow-up questions. "
-                        "Format your response for terminal output using plain text only — "
-                        "no markdown headers, no emoji, use simple dashes for bullet points."
-                    )
-                }
-            ]
-        else:
-            prompt = [
-                {
-                    "type": "text",
-                    "text": (
-                        f"Please diagnose my plant with the following information:\n{plant_info}\n\n"
-                        "Provide a complete diagnosis and all recommendations in one response. "
-                        "Do not ask follow-up questions. "
-                        "Format your response for terminal output using plain text only — "
-                        "no markdown headers, no emoji, use simple dashes for bullet points."
-                    )
-                }
-            ]
-            
-    
-        return _ask_claude_stream(prompt, api_key)
+    return _ask_claude_stream(prompt, api_key)
 
 def _get_plant(table: str, value: str) -> Optional[dict]:
     """

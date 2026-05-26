@@ -85,7 +85,7 @@ def test_add_plant(test_db, create_species) -> None:
     assert species is True
 
     # Add a plant and verify the return value
-    result = add_plant('Joe', 'Crassula', '2026-04-08', 14)
+    result = add_plant('Joe', 'Crassula', '2026-04-08', 14, '')
     assert result is True
 
     # Query the database to confirm the plant was saved
@@ -103,7 +103,7 @@ def test_add_plant(test_db, create_species) -> None:
     assert plant['interval'] == 14
 
     # Verify correct error message shows for duplicate nickname
-    result = add_plant('Joe', 'Crassula', '2026-04-08', 14)
+    result = add_plant('Joe', 'Crassula', '2026-04-08', 14, '')
     assert result == "Error: Plant 'Joe' already exists. Run 'plantera show' to see your plants."
 
 
@@ -122,9 +122,9 @@ def test_show_plants(test_db, create_species) -> None:
     species = create_species()
     assert species is True
 
-    add_plant('Joe', 'Crassula', str(date.today()), 14)   # not due
-    add_plant('Jane', 'Crassula', str(date.today() - timedelta(days=15)), 14)       # overdue
-    add_plant('Jim', 'Crassula', str(date.today() - timedelta(days=30)), 14)        # overdue
+    add_plant('Joe', 'Crassula', str(date.today()), 14, '')   # not due
+    add_plant('Jane', 'Crassula', str(date.today() - timedelta(days=15)), 14, '')       # overdue
+    add_plant('Jim', 'Crassula', str(date.today() - timedelta(days=30)), 14, '')        # overdue
 
     # Show all plants
     plants_list = show_plants(None, False, False)
@@ -165,7 +165,7 @@ def test_watered(test_db, create_species) -> None:
     species = create_species()
     assert species is True
 
-    result = add_plant('Joe', 'Crassula', str(date.today()), 14)
+    result = add_plant('Joe', 'Crassula', str(date.today()), 14, '')
     assert result is True
 
     # Mark as watered and verify the returned next watering date
@@ -208,7 +208,7 @@ def test_update_plant(test_db, create_species) -> None:
     species = create_species(2)
     assert species is True
 
-    result = add_plant('Joe', 'Crassula', '2026-04-01', 14)
+    result = add_plant('Joe', 'Crassula', '2026-04-01', 14, '')
     assert result is True
 
     # Update multiple fields at once
@@ -305,7 +305,7 @@ def test_delete_plant(test_db, create_species) -> None:
     species = create_species()
     assert species is True
 
-    result = add_plant('Joe', 'Crassula', '2026-04-01', 14)
+    result = add_plant('Joe', 'Crassula', '2026-04-01', 14, '')
     assert result is True
 
     # Test error case — non-existent plant
@@ -344,7 +344,7 @@ def test_delete_species(test_db, create_species) -> None:
     assert result == "Error: Species 'Rosa' not found. Run 'plantera show --species' to see available species."
 
     # Test error case — species has plants associated with it
-    add_plant('Joe', 'Crassula', '2026-04-01', 7)
+    add_plant('Joe', 'Crassula', '2026-04-01', 7, '')
     result = delete_species('Crassula')
     assert result == "Error: Species 'Crassula' has plants associated with it. Delete the plants first."
 

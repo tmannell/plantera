@@ -4,6 +4,17 @@ from pathlib import Path
 DB_DIR = Path.home() / ".local" / "share" / "plantera"
 DB_PATH = DB_DIR / "plantera.db"
 
+_migrations = [
+    "ALTER TABLE my_plants ADD COLUMN environment TEXT",
+]
+
+def _run_migrations(conn):
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)")
+    current = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] or 0
+    for i, sql in enumerate(_migrations[current:], start=current + 1):
+        conn.execute(sql)
+        conn.execute("INSERT INTO schema_version (version) VALUES (?)", [i])
+
 def db_init():
   """
   Initialize the database by creating the plant_species and my_plants tables if they don't exist.
@@ -40,6 +51,8 @@ def db_init():
                    id INTEGER PRIMARY KEY AUTOINCREMENT, \
                    key TEXT UNIQUE COLLATE NOCASE, \
                    value TEXT)")
+
+      _run_migrations(conn)
 
     except Exception as e:
       return e

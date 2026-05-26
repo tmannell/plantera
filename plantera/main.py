@@ -73,7 +73,8 @@ def add(
     nickname: Annotated[str, typer.Argument(help="Name/nickname of the plant")],
     genus: Annotated[str, typer.Argument(help="Type of the plant (must exist in the plant library)")],
     last_watered: Annotated[str, typer.Argument(help="Last watered date (YYYY-MM-DD)")] = str(date.today()),
-    interval: Annotated[int, typer.Argument(help="Watering interval (in days)")] = 7
+    interval: Annotated[int, typer.Argument(help="Watering interval (in days)")] = 7,
+    environment: Annotated[str, typer.Argument(help="Description of the location and physical environment of the plant")] = ''
 ) -> None:
   """
   CLI command to add a plant to the database.
@@ -91,7 +92,7 @@ def add(
   """
 
   # Add plant to the database
-  result = service.add_plant(nickname, genus, last_watered, interval)
+  result = service.add_plant(nickname, genus, last_watered, interval, environment)
 
   # Check the result and output the appropriate message
   if result is True:
@@ -251,7 +252,8 @@ def update(
     genus: Annotated[Optional[str], typer.Option(help="genus of the plant (must exist in the database)")] = None,
     last_watered: Annotated[Optional[str], typer.Option(help="Last watered date (YYYY-MM-DD)")] = None,
     next_watering: Annotated[Optional[str], typer.Option(help="Next watering date (YYYY-MM-DD)")] = None,
-    interval: Annotated[Optional[int], typer.Option(help="Watering interval (in days)")] = None
+    interval: Annotated[Optional[int], typer.Option(help="Watering interval (in days)")] = None,
+    environment: Annotated[Optional[str], typer.Option(help="Description of the location and physical environment of the plant")] = None
 ) -> None:
   """
   CLI command to update a plant in the database.
@@ -273,7 +275,7 @@ def update(
   """
 
   # Update the plant in the database
-  result = service.update_plant(my_plant, nickname, genus, last_watered, next_watering, interval)
+  result = service.update_plant(my_plant, nickname, genus, last_watered, next_watering, interval, environment)
 
   # Check the result and output the appropriate message
   if result is True:
@@ -484,24 +486,29 @@ def diagnose(
     nickname: Annotated[str, typer.Argument(help="The nickname of the plant you wish to diagnose")],
     condition: Annotated[Optional[str], typer.Argument(help="Text description of plant's condition")] = None,
     picture: Annotated[Optional[str], typer.Option(help="Path to picture of plant")] = None,
-    update_care_info: Annotated[Optional[bool], typer.Option(help="Update the care info of the plan in the database")] = False
 ):
 
 
-  if condition is None and picture is None and update_care_info is False:
+  if condition is None and picture is None:
     typer.echo("Error: You must provide either a condition or a picture to diagnose the plant.")
     return
 
-  result = service.diagnose(nickname, condition, picture, update_care_info)
+  result = service.diagnose(nickname, condition, picture)
 
-  if update_care_info:
+  console.print(f"\n[bold green]Response from Claude:[/bold green]\n")
+  for chunk in result:
+    print (chunk, end="", flush=True)
+  print()
+
+@app.command()
+def update_care_info(
+    genus: Annotated[str, typer.Argument(help="Genus of the plant to update")],
+):
+
+    result = service.update_care_info(genus)
     console.print(f"\n[bold green]Response from Claude:[/bold green]")
     typer.echo(result)
-  else:
-    console.print(f"\n[bold green]Response from Claude:[/bold green]\n")
-    for chunk in result:
-      print (chunk, end="", flush=True)
-    print()
+
 
 
 if __name__ == "__main__":
