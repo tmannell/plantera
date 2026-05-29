@@ -3,6 +3,7 @@ import base64
 import json
 import mimetypes
 import sqlite3
+import os
 from datetime import datetime, timedelta, date
 from typing import Optional, Union
 
@@ -488,15 +489,19 @@ def update_care_info(genus):
 
     # Get API Key
     with db.get_connection() as conn:
-        cursor = conn.execute("SELECT value FROM settings WHERE key = 'diagnose_api_key'")
-        api_key = cursor.fetchone()[0]
-    
+        cursor = conn.execute("SELECT value FROM settings WHERE key = 'claude_api_key'")
+        row = cursor.fetchone()
+        if row is None:
+            return False, "Error: API key not found. Please set it using 'plantera config claude_api_key <your_api_key>'"
+
+        api_key = row[0]
+
     # Get the data on the plant we are diagnosing.
     species = _get_plant('plant_species', genus)
     
     # Throw an error if the plant doesn't exist.
     if species is None:
-        return f"Error: Species '{genus}' not found. Run 'plantera show --species' to see available species."
+        return False, f"Error: Species '{genus}' not found. Run 'plantera show --species' to see available species."
 
     prompt = [
         {
@@ -522,20 +527,25 @@ def update_care_info(genus):
                 "UPDATE plant_species SET care_info = ? WHERE id = ?",
                 [response['care_info'], species['id']]
             )
-        return f"Care info updated\n\n{response['care_info']}"
+        return True, f"Care info updated\n\n{response['care_info']}"
     else:
-        return "Care info is already up to date."
+        return True, "Care info is already up to date."
 
 
 def diagnose(nickname, condition, picture_path):
 
     with db.get_connection() as conn:
-        cursor = conn.execute("SELECT value FROM settings WHERE key = 'diagnose_api_key'")
-        api_key = cursor.fetchone()[0]
+        cursor = conn.execute("SELECT value FROM settings WHERE key = 'claude_api_key'")
+        row = cursor.fetchone()
+
+        if row is None:
+            return False, "Error: API key not found. Please set it using 'plantera config claude_api_key <your_api_key>'"
+
+        api_key = row[0]
 
     plant = _get_plant('my_plants', nickname)
     if plant is None:
-        return f"Error: Plant '{nickname}' not found. Run 'plantera show' to see your plants."
+        return False, f"Error: Plant '{nickname}' not found. Run 'plantera show' to see your plants."
 
     data = dict()
     data['nickname'] = nickname
@@ -560,10 +570,17 @@ def diagnose(nickname, condition, picture_path):
     plant_info += ", ".join(f"{row['watered_date']}" for row in watering_dates) + "\n"
 
     prompt = []
-    if picture_path is not None:
+    if picture_path:
+        if not os.path.exists(picture_path):
+            return False, "Error: Picture file not found."
+
+        if mimetypes.guess_type(picture_path) not in ['image/jpeg', 'image/png', 'image/gif', 'image/webp']:
+            return False, "Error: Invalid picture file type. Must be jpeg, png, gif, or webp."
+
+
         with open(picture_path, "rb") as file:
             image_data = base64.standard_b64encode(file.read()).decode("utf-8")
-        prompt.append({
+            prompt.append({
             "type": "image",
             "source": {
                 "type": "base64",
@@ -584,7 +601,7 @@ def diagnose(nickname, condition, picture_path):
         )
     })
 
-    return _ask_claude_stream(prompt, api_key)
+    return True, _ask_claude_stream(prompt, api_key)
 
 def _get_plant(table: str, value: str) -> Optional[dict]:
     """

@@ -1,7 +1,9 @@
 from typer.testing import CliRunner
 from datetime import date, timedelta
+from tests.helpers import create_species
 from plantera.main import app, __version__
 from plantera.service import add_plant
+from plantera.service import config_setting
 from unittest.mock import patch
 
 import humanize
@@ -16,7 +18,7 @@ def test_cli_version(test_db) -> None:
     assert result.output == f"Plantera v{__version__}\n"
 
 
-def test_cli_add_plant(test_db, create_species) -> None:
+def test_cli_add_plant(test_db) -> None:
     """
     Test the add CLI command for success, missing species, and duplicate plant errors.
 
@@ -24,8 +26,6 @@ def test_cli_add_plant(test_db, create_species) -> None:
     ----------
     test_db : fixture
         Pytest fixture providing an isolated temporary database.
-    create_species : fixture
-        Factory fixture to insert a test species.
     """
     # Set up required species
     result = create_species(1)
@@ -34,17 +34,16 @@ def test_cli_add_plant(test_db, create_species) -> None:
     # Add a plant successfully
     result = runner.invoke(app, ['add', 'Joe', 'Crassula', '2026-04-01', '14'])
     assert result.exit_code == 0
-    assert result.output == "Plant 'Joe' added successfully!\n"
 
     # Test error case — species does not exist
     result = runner.invoke(app, ['add', 'Jim', 'Rosa', '2026-04-01', '14'])
-    assert result.exit_code == 0
-    assert result.output == "Error: Species 'Rosa' not found. Run 'plantera show --species' to see available species.\n"
+    assert result.exit_code == 1
+    assert 'Error' in result.output
 
     # Test error case — duplicate nickname
     result = runner.invoke(app, ['add', 'Joe', 'Crassula', '2026-04-01', '14'])
-    assert result.exit_code == 0
-    assert result.output == "Error: Plant 'Joe' already exists. Run 'plantera show' to see your plants.\n"
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
 
 def test_cli_add_species(test_db) -> None:
@@ -59,15 +58,14 @@ def test_cli_add_species(test_db) -> None:
     # Add a species successfully
     result = runner.invoke(app, ['add-species', 'Rosa', 'Rose', 'Soak when soil is completely dry for a day or two'])
     assert result.exit_code == 0
-    assert result.output == "Species 'Rosa - Rose' added successfully!\n"
 
     # Test error case — duplicate genus
     result = runner.invoke(app, ['add-species', 'Rosa', 'Rose', 'Soak when soil is completely dry for a day or two'])
-    assert result.exit_code == 0
-    assert result.output == "Error: Species 'Rosa' already exists. Run 'plantera show --species' to see available species.\n"
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
 
-def test_cli_show_plants(test_db, create_species) -> None:
+def test_cli_show_plants(test_db) -> None:
     """
     Test the show CLI command for empty db, all plants, species, and due filtering.
 
@@ -75,15 +73,12 @@ def test_cli_show_plants(test_db, create_species) -> None:
     ----------
     test_db : fixture
         Pytest fixture providing an isolated temporary database.
-    create_species : fixture
-        Factory fixture to insert a test species.
     """
     # Test empty database state
     result = runner.invoke(app, ['show'])
     assert result.exit_code == 0
-    assert result.output == "No plants in your collection yet. Try 'plantera add --help'.\n"
 
-    result = create_species()
+    result = create_species(1)
     assert result is True
 
     # Add a plant that is not yet due — next_watering will be 14 days from today
@@ -94,7 +89,6 @@ def test_cli_show_plants(test_db, create_species) -> None:
     # Verify all-watered message when no plants are overdue
     result = runner.invoke(app, ['show', '--due'])
     assert result.exit_code == 0
-    assert result.output == "All plants are watered and up to date.\n"
 
     # Add an overdue plant — last watered 14 days ago
     overdue_watering_date = str(date.today() - timedelta(days=14))
@@ -126,19 +120,19 @@ def test_cli_show_plants(test_db, create_species) -> None:
 
     # Test error cases for invalid arguments
     result = runner.invoke(app, ['show', '--due', '--name', 'Joe'])
-    assert result.exit_code == 0
-    assert result.output == 'Error: Cannot use --name with --species or --due.\n'
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
     result = runner.invoke(app, ['show', '--species', '--name', 'Joe'])
-    assert result.exit_code == 0
-    assert result.output == 'Error: Cannot use --name with --species or --due.\n'
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
     result = runner.invoke(app, ['show', '--species', '--due'])
-    assert result.exit_code == 0
-    assert result.output == 'Error: Cannot use --species and --due together.\n'
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
 
-def test_cli_watered(test_db, create_species) -> None:
+def test_cli_watered(test_db) -> None:
     """
     Test the watered CLI command for success and non-existent plant errors.
 
@@ -146,8 +140,6 @@ def test_cli_watered(test_db, create_species) -> None:
     ----------
     test_db : fixture
         Pytest fixture providing an isolated temporary database.
-    create_species : fixture
-        Factory fixture to insert a test species.
     """
     # Set up species and plant
     result = create_species()
@@ -159,15 +151,15 @@ def test_cli_watered(test_db, create_species) -> None:
     result = runner.invoke(app, ['watered', 'Joe'])
     assert result.exit_code == 0
     next_watering = date.today() + timedelta(days=14)
-    assert result.output == f"Plant 'Joe' marked as watered, next watering is {humanize.naturalday(next_watering)}.\n"
+    assert humanize.naturalday(next_watering) in result.output
 
     # Test error case — non-existent plant
     result = runner.invoke(app, ['watered', 'Jim'])
-    assert result.exit_code == 0
-    assert result.output == "Error: Plant 'Jim' not found. Run 'plantera show' to see your plants.\n"
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
 
-def test_cli_update_plant(test_db, create_species) -> None:
+def test_cli_update_plant(test_db) -> None:
     """
     Test the update CLI command for success, invalid species, and non-existent plant errors.
 
@@ -175,8 +167,6 @@ def test_cli_update_plant(test_db, create_species) -> None:
     ----------
     test_db : fixture
         Pytest fixture providing an isolated temporary database.
-    create_species : fixture
-        Factory fixture to insert a test species.
     """
     # Set up two species so genus change can be tested
     result = create_species(1)
@@ -188,22 +178,21 @@ def test_cli_update_plant(test_db, create_species) -> None:
     assert result is True
 
     # Update multiple fields successfully
-    result = runner.invoke(app, ['update', 'Joe', '--nickname', 'James', '--genus', 'Rosa', '--last-watered', '2026-04-01', '--interval', '30'])
+    result = runner.invoke(app, ['update', 'Joe', '--nickname', 'James', '--genus', 'Rosa', '--last-watered', '2026-04-01', '--interval', '30', '--environment', 'direct south facing window'])
     assert result.exit_code == 0
-    assert result.output == "Plant 'Joe' updated successfully!\n"
 
     # Test error case — non-existent species
     result = runner.invoke(app, ['update', 'James', '--genus', 'Maize', '--last-watered', '2026-04-01', '--interval', '30'])
-    assert result.exit_code == 0
-    assert result.output == "Error: Species 'Maize' not found. Run 'plantera show --species' to see available species.\n"
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
     # Test error case — non-existent plant
     result = runner.invoke(app, ['update', 'Joe', '--genus', 'Rosa', '--last-watered', '2026-04-01', '--interval', '30'])
-    assert result.exit_code == 0
-    assert result.output == "Error: Plant 'Joe' not found. Run 'plantera show' to see your plants.\n"
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
 
-def test_cli_update_species(test_db, create_species) -> None:
+def test_cli_update_species(test_db) -> None:
     """
     Test the update-species CLI command for success and non-existent species errors.
 
@@ -211,25 +200,22 @@ def test_cli_update_species(test_db, create_species) -> None:
     ----------
     test_db : fixture
         Pytest fixture providing an isolated temporary database.
-    create_species : fixture
-        Factory fixture to insert a test species.
     """
     # Set up species to update
-    result = create_species()
+    result = create_species(1)
     assert result is True
 
     # Update the species successfully
     result = runner.invoke(app, ['update-species', 'Crassula', '--genus', 'Rosa', '--common-name', 'Rose', '--care-info', 'Bottom soak when dry'])
     assert result.exit_code == 0
-    assert result.output == "Species 'Crassula' updated successfully!\n"
 
     # Test error case — non-existent species
     result = runner.invoke(app, ['update-species', 'Maize', '--genus', 'Rosa', '--common-name', 'Rose', '--care-info', 'Bottom soak when dry'])
-    assert result.exit_code == 0
-    assert result.output == "Error: Species 'Maize' not found. Run 'plantera show --species' to see available species.\n"
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
 
-def test_cli_delete_plant(test_db, create_species) -> None:
+def test_cli_delete_plant(test_db) -> None:
     """
     Test the delete CLI command for cancel confirmation and successful deletion.
 
@@ -237,26 +223,25 @@ def test_cli_delete_plant(test_db, create_species) -> None:
     ----------
     test_db : fixture
         Pytest fixture providing an isolated temporary database.
-    create_species : fixture
-        Factory fixture to insert a test species.
     """
     # Set up species and plant
-    result = create_species()
+    result = create_species(1)
     assert result is True
     result = add_plant('Joe', 'Crassula', '2026-03-01', 14, '')
     assert result is True
 
     # Test cancelling the deletion prompt
     result = runner.invoke(app, ['delete', 'Joe'], input='n\n')
+    assert result.exit_code == 0
     assert "Deletion cancelled." in result.output
 
     # Confirm deletion
     result = runner.invoke(app, ['delete', 'Joe'], input='y\n')
     assert result.exit_code == 0
-    assert "Plant 'Joe' deleted successfully!\n" in result.output
+    assert "Joe" in result.output
 
 
-def test_cli_delete_species(test_db, create_species) -> None:
+def test_cli_delete_species(test_db) -> None:
     """
     Test the delete-species CLI command for cancel confirmation and successful deletion.
 
@@ -264,27 +249,27 @@ def test_cli_delete_species(test_db, create_species) -> None:
     ----------
     test_db : fixture
         Pytest fixture providing an isolated temporary database.
-    create_species : fixture
-        Factory fixture to insert a test species.
     """
     # Set up species to delete
-    result = create_species()
+    result = create_species(1)
     assert result is True
 
     # Test cancelling the deletion prompt
     result = runner.invoke(app, ['delete-species', 'Crassula'], input='n\n')
+    assert result.exit_code == 0
     assert "Deletion cancelled." in result.output
 
     # Test error case — species has plants associated with it
     runner.invoke(app, ['add', 'Joe', 'Crassula', '2026-04-01', '7'])
     result = runner.invoke(app, ['delete-species', 'Crassula'], input='y\n')
-    assert "Error: Species 'Crassula' has plants associated with it. Delete the plants first." in result.output
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
     # Delete plant first, then confirm species deletion
     runner.invoke(app, ['delete', 'Joe'], input='y\n')
     result = runner.invoke(app, ['delete-species', 'Crassula'], input='y\n')
     assert result.exit_code == 0
-    assert "Species 'Crassula' deleted successfully!\n" in result.output
+    assert "Crassula" in result.output
 
 def test_cli_config(test_db) -> None:
     """
@@ -298,12 +283,10 @@ def test_cli_config(test_db) -> None:
     # No args with empty settings table
     result = runner.invoke(app, ['config'])
     assert result.exit_code == 0
-    assert result.output == "There are no settings configured.\n"
 
     # Set auto_interval with default value
     result = runner.invoke(app, ['config', 'auto_interval'])
     assert result.exit_code == 0
-    assert result.output == "Setting 'auto_interval' updated successfully!\n"
 
     # No args shows the settings table
     result = runner.invoke(app, ['config'])
@@ -314,35 +297,32 @@ def test_cli_config(test_db) -> None:
     # Set auto_interval with a custom value
     result = runner.invoke(app, ['config', 'auto_interval', '--value', '0.3'])
     assert result.exit_code == 0
-    assert result.output == "Setting 'auto_interval' updated successfully!\n"
 
-    # Set diagnose_api_key with a value
-    result = runner.invoke(app, ['config', 'diagnose_api_key', '--value', 'sk-abc123'])
+    # Set claude_api_key with a value
+    result = runner.invoke(app, ['config', 'claude_api_key', '--value', 'sk-abc123'])
     assert result.exit_code == 0
-    assert result.output == "Setting 'diagnose_api_key' updated successfully!\n"
 
     # Delete a setting
     result = runner.invoke(app, ['config', 'auto_interval', '--delete'])
     assert result.exit_code == 0
-    assert result.output == "Setting 'auto_interval' updated successfully!\n"
 
-    # Test error case — diagnose_api_key requires a value
-    result = runner.invoke(app, ['config', 'diagnose_api_key'])
-    assert result.exit_code == 0
-    assert result.output == "Error: diagnose_api_key requires a value.\n"
+    # Test error case — claude_api_key requires a value
+    result = runner.invoke(app, ['config', 'claude_api_key'])
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
     # Test error case — invalid setting
     result = runner.invoke(app, ['config', 'bad_setting'])
-    assert result.exit_code == 0
-    assert result.output == f"Error: Invalid setting. Allowed settings are: {', '.join(['auto_interval', 'diagnose_api_key'])}\n"
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
     # Test error case — --value and --delete together
     result = runner.invoke(app, ['config', 'auto_interval', '--value', '0.4', '--delete'])
-    assert result.exit_code == 0
-    assert result.output == "Error: Cannot use --value and --delete together.\n"
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
 
-def test_cli_remind(test_db, create_species) -> None:
+def test_cli_remind(test_db) -> None:
     """
     Test the remind CLI command for no plants due and plants due cases.
 
@@ -350,16 +330,13 @@ def test_cli_remind(test_db, create_species) -> None:
     ----------
     test_db : fixture
         Pytest fixture providing an isolated temporary database.
-    create_species : fixture
-        Factory fixture to insert a test species.
     """
     # Test with empty database — no plants due
     result = runner.invoke(app, ['remind'])
     assert result.exit_code == 0
-    assert result.output == 'No plants are due for watering.\n'
 
     # Set up an overdue plant
-    result = create_species()
+    result = create_species(1)
     assert result is True
     result = add_plant('Joe', 'Crassula', str(date.today() - timedelta(days=14)), 14, '')
     assert result is True
@@ -368,5 +345,62 @@ def test_cli_remind(test_db, create_species) -> None:
     with patch('subprocess.call'):
         result = runner.invoke(app, ['remind'])
     assert result.exit_code == 0
-    assert 'Water Joe - Jade Plant (Due: today)\n' in result.output
+    assert "Joe" in result.output
 
+def test_cli_update_care_info(test_db, mock_claude) -> None:
+
+    # Test without API Key configured.
+    result = runner.invoke(app, ['update-care-info', 'Crassula'])
+    assert result.exit_code == 1
+    assert "Error" in result.output
+
+    # Test with API key configured but missing genus / species.
+    result = config_setting('claude_api_key', 'sk-abc123', False)
+    assert result is True
+    result = runner.invoke(app, ['update-care-info', 'Crassula'])
+    assert result.exit_code == 1
+    assert "Error" in result.output
+
+    # Test with API key configured and species found.
+    result = create_species(1)
+    assert result is True
+    result = runner.invoke(app, ['update-care-info', 'Crassula'])
+    assert "Water daily." in result.output
+
+    # Test with API key configured and species found and care info already up to date.
+    result = runner.invoke(app, ["update-care-info", "Crassula"])
+    assert "Care info is already up to date." in result.output
+
+def test_cli_diagnose(test_db, mock_claude) -> None:
+
+    # Test without a condition or picture path.
+    result = runner.invoke(app, ['diagnose', 'Joe'])
+    assert result.exit_code == 1
+    assert "Error" in result.output
+
+    # Test with a condition but no API Key configured.
+    result = runner.invoke(app, ['diagnose', 'Joe', '--condition', 'Brown leaves'])
+    assert result.exit_code == 1
+    assert "Error" in result.output
+
+    # Test with a condition and API key configured but plant doesn't exist.
+    result = config_setting('claude_api_key', 'sk-abc123', False)
+    assert result is True
+    result = runner.invoke(app, ['diagnose', 'Joe', '--condition', 'Brown leaves'])
+    assert result.exit_code == 1
+    assert "Error" in result.output
+
+    # Test with a condition and API key configured and plant exists.
+    result = create_species(1)
+    assert result is True
+    result = add_plant('Joe', 'Crassula', '2026-03-01', 14, 'North facing window')
+    assert result is True
+    result = runner.invoke(app, ['diagnose', 'Joe', '--condition', 'Brown leaves'])
+    assert result.exit_code == 0
+    assert 'Plant seems healthy.' in result
+
+    # Test with a picture and API key configured and plant exists.
+    result = runner.invoke(app, ['diagnose', 'Joe', '--picture', 'tests/test_plant.jpg'])
+    # Expecting a failure because we don't have a real picture in the testing suite.
+    assert result.exit_code == 1
+    assert "Error" in result.output

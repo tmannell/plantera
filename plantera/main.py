@@ -28,7 +28,7 @@ BANNER = """[green]
   ||
 [/green]"""
 
-ALLOWED_SETTINGS = ["auto_interval", "diagnose_api_key"]
+ALLOWED_SETTINGS = ["auto_interval", "claude_api_key"]
 
 def version_callback(value: bool) -> None:
   """
@@ -58,6 +58,7 @@ def startup(
   result = db.db_init()
   if result not in [True, None]:
     typer.echo(f"Error initializing database: {str(result)}")
+    raise typer.Exit(code=1)
 
   if first_run:
     Console().print(BANNER, highlight=False)
@@ -99,6 +100,7 @@ def add(
     typer.echo(f"Plant '{nickname}' added successfully!")
   else:
     typer.echo(str(result))
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -128,6 +130,7 @@ def add_species(
     typer.echo(f"Species '{genus} - {common_name}' added successfully!")
   else:
     typer.echo(str(result))
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -152,11 +155,11 @@ def show(
   # Check if both species and due are True and output an error message
   if species and due:
     typer.echo("Error: Cannot use --species and --due together.")
-    return
+    raise typer.Exit(code=1)
   # Check if name and species or due are True and output an error message
   if name and (species or due):
     typer.echo("Error: Cannot use --name with --species or --due.")
-    return
+    raise typer.Exit(code=1)
 
   # Show plants based on the specified criteria
   result = service.show_plants(name, species, due)
@@ -223,6 +226,7 @@ def show(
 
   else:
     typer.echo(result)
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -243,6 +247,7 @@ def watered(nickname: Annotated[str, typer.Argument(help="Mark plant as watered 
     typer.echo(f"Plant '{nickname}' marked as watered, next watering is {humanize.naturalday(result)}.")
   else:
     typer.echo(str(result))
+    raise typer.Exit(code=1)  
 
 
 @app.command()
@@ -283,9 +288,11 @@ def update(
 
   elif isinstance(result, str):
     typer.echo(result)
+    raise typer.Exit(code=1)
 
   else:
     typer.echo(str(result))
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -318,8 +325,10 @@ def update_species(
     typer.echo(f"Species '{genus_to_update}' updated successfully!")
   elif isinstance(result, str):
     typer.echo(result)
+    raise typer.Exit(code=1)
   else:
     typer.echo(str(result))
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -346,6 +355,7 @@ def delete(nickname: Annotated[str, typer.Argument(help="Nickname of the plant t
     typer.echo(f"Plant '{nickname}' deleted successfully!")
   else:
     typer.echo(str(result))
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -372,6 +382,7 @@ def delete_species(genus: Annotated[str, typer.Argument(help="Genus of the plant
     typer.echo(f"Species '{genus}' deleted successfully!")
   else:
     typer.echo(str(result))
+    raise typer.Exit(code=1)
 
 @app.command()
 def remind() -> None:
@@ -401,7 +412,7 @@ def remind() -> None:
     typer.echo("No plants are due for watering.")
 
 @app.command()
-def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to enable or update (auto_interval, diagnose_api_key [CLAUDE])")] = None,
+def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to enable or update (auto_interval, claude_api_key [CLAUDE])")] = None,
            value: Annotated[Optional[str], typer.Option(help="Set the value of the setting")] = None,
            delete: Annotated[bool, typer.Option(help="Delete the setting")] = False
            ) -> None:
@@ -414,7 +425,7 @@ def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to
   Parameters
   ----------
   setting : str, optional
-      The setting key to update or delete. Allowed values: auto_interval, diagnose_api_key.
+      The setting key to update or delete. Allowed values: auto_interval, claude_api_key.
   value : str, optional
       The value to set for the given setting.
   delete : bool
@@ -425,7 +436,7 @@ def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to
   # value and delete cannot be used together.
   if value and delete:
     typer.echo("Error: Cannot use --value and --delete together.")
-    return
+    raise typer.Exit(code=1)
 
   if setting is not None:
     setting = setting.replace('-', '_')
@@ -456,6 +467,7 @@ def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to
           Console().print(table)
       else:
         typer.echo(result)
+        raise typer.Exit(code=1)
 
       return
 
@@ -463,12 +475,12 @@ def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to
   # Setting value must exist and be in the ALLOWED_SETTINGS list.
   if setting not in ALLOWED_SETTINGS:
     typer.echo(f"Error: Invalid setting. Allowed settings are: {', '.join(ALLOWED_SETTINGS)}")
-    return
+    raise typer.Exit(code=1)
 
-  # diagnose_api_key requires a value.
-  if setting == "diagnose_api_key" and value is None:
-    typer.echo("Error: diagnose_api_key requires a value.")
-    return
+  # claude_api_key requires a value.
+  if setting == "claude_api_key" and value is None:
+    typer.echo("Error: claude_api_key requires a value.")
+    raise typer.Exit(code=1)
 
   # auto_interval - set default value if not set.
   if setting == "auto_interval" and value is None:
@@ -480,34 +492,42 @@ def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to
     typer.echo(f"Setting '{setting}' updated successfully!")
   else:
     typer.echo(str(result))
+    raise typer.Exit(code=1)
 
 @app.command()
 def diagnose(
     nickname: Annotated[str, typer.Argument(help="The nickname of the plant you wish to diagnose")],
-    condition: Annotated[Optional[str], typer.Argument(help="Text description of plant's condition")] = None,
+    condition: Annotated[Optional[str], typer.Option(help="Text description of plant's condition")] = None,
     picture: Annotated[Optional[str], typer.Option(help="Path to picture of plant")] = None,
 ):
 
 
   if condition is None and picture is None:
     typer.echo("Error: You must provide either a condition or a picture to diagnose the plant.")
-    return
+    raise typer.Exit(code=1)
 
-  result = service.diagnose(nickname, condition, picture)
-
-  console.print(f"\n[bold green]Response from Claude:[/bold green]\n")
-  for chunk in result:
-    print (chunk, end="", flush=True)
-  print()
+  success, result = service.diagnose(nickname, condition, picture)
+  if success:
+    console.print(f"\n[bold green]Response from Claude:[/bold green]\n")
+    for chunk in result:
+      print (chunk, end="", flush=True)
+    print()
+  else:
+    typer.echo(str(result))
+    raise typer.Exit(code=1)
 
 @app.command()
 def update_care_info(
-    genus: Annotated[str, typer.Argument(help="Genus of the plant to update")],
+    genus: Annotated[str, typer.Argument(help="Genus of the plant species to update")],
 ):
 
-    result = service.update_care_info(genus)
-    console.print(f"\n[bold green]Response from Claude:[/bold green]")
-    typer.echo(result)
+    success, result = service.update_care_info(genus)
+    if success:
+      console.print(f"\n[bold green]Response from Claude:[/bold green]")
+      typer.echo(result)
+    else:
+      typer.echo(str(result))
+      raise typer.Exit(code=1)
 
 
 
