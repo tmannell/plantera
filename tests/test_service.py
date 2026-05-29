@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from plantera.service import add_plant
 from plantera.service import show_plants
 from plantera.service import watered
+from plantera.service import snooze
 from plantera.service import update_plant
 from plantera.service import update_species
 from plantera.service import delete_species
@@ -48,9 +49,8 @@ def test_add_species(test_db) -> None:
     test_db : fixture
         Pytest fixture providing an isolated temporary database.
     """
-    # Add a species and verify the return value
-    result = create_species(1)
-    assert result is True
+    # Add new species for testing
+    assert create_species(1) is True
 
     # Query the database to confirm the species was saved
     with db.get_connection() as conn:
@@ -65,8 +65,7 @@ def test_add_species(test_db) -> None:
     assert species['care_info'] == 'Soak when soil is completely dry for a day or two'
 
     # Verify correct error message shows for duplicate genus
-    result = create_species(1)
-    assert "Error" in result
+    assert "Error" in create_species(1)
 
 
 def test_add_plant(test_db) -> None:
@@ -78,13 +77,8 @@ def test_add_plant(test_db) -> None:
     test_db : fixture
         Pytest fixture providing an isolated temporary database.
     """
-    # Set up required species first
-    species = create_species()
-    assert species is True
-
-    # Add a plant and verify the return value
-    result = add_plant('Joe', 'Crassula', '2026-04-08', 14, 'North facing window.')
-    assert result is True
+    assert create_species() is True
+    assert add_plant('Joe', 'Crassula', '2026-04-08', 14, 'North facing window.') is True
 
     # Query the database to confirm the plant was saved
     with db.get_connection() as conn:
@@ -102,8 +96,7 @@ def test_add_plant(test_db) -> None:
     assert plant['environment'] == 'North facing window.'
 
     # Verify correct error message shows for duplicate nickname
-    result = add_plant('Joe', 'Crassula', '2026-04-08', 14, '')
-    assert "Error" in result
+    assert "Error" in add_plant('Joe', 'Crassula', '2026-04-08', 14, '')
 
 
 def test_show_plants(test_db) -> None:
@@ -116,8 +109,7 @@ def test_show_plants(test_db) -> None:
         Pytest fixture providing an isolated temporary database.
     """
     # Set up species and plants with varying last watered dates
-    species = create_species()
-    assert species is True
+    assert create_species() is True
 
     add_plant('Joe', 'Crassula', str(date.today()), 14, '')   # not due
     add_plant('Jane', 'Crassula', str(date.today() - timedelta(days=15)), 14, 'North facing window.')       # overdue
@@ -158,11 +150,8 @@ def test_watered(test_db) -> None:
         Pytest fixture providing an isolated temporary database.
     """
     # Set up species and plant
-    species = create_species()
-    assert species is True
-
-    result = add_plant('Joe', 'Crassula', str(date.today()), 14, '')
-    assert result is True
+    assert create_species() is True
+    assert add_plant('Joe', 'Crassula', str(date.today()), 14, '') is True
 
     # Mark as watered and verify the returned next watering date
     success, result = watered('Joe')
@@ -176,14 +165,64 @@ def test_watered(test_db) -> None:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM my_plants where nickname = 'Joe'")
         plant = cursor.fetchone()
+        cursor.execute("SELECT watered_date FROM watered_log WHERE plant_id = ?", [plant['id']])
+        log_entries = cursor.fetchall()
 
     assert plant['last_watered'] == str(date.today())
     assert plant['next_watering'] == str(date.today() + timedelta(days=14))
+
+    # watered_log should now have 2 entries: one from add_plant and one from watered()
+    assert len(log_entries) == 2
+    assert log_entries[-1]['watered_date'] == str(date.today())
 
     # Test error case — non-existent plant
     success, result = watered('Jimbo')
     assert success is False
     assert "Error" in result
+
+def test_snooze(test_db) -> None:
+    """
+    Test snoozing a plant's next watering date by a given number of days.
+
+    Parameters
+    ----------
+    test_db : fixture
+        Pytest fixture providing an isolated temporary database.
+    """
+    # Test without a plant.
+    success, result = snooze ('Joe', 1)
+    assert success is False
+    assert "Error" in result
+
+    # Test with a plant and next watering is today
+    assert create_species(1) is True
+    assert add_plant('Joe', 'Crassula', str(date.today() - timedelta(days=14)), 14, '') is True
+
+    success, new_watering = snooze('Joe', 1)
+    assert success is True
+    assert new_watering == date.today() + timedelta(days=1)
+
+    # Test with a plant and next watering is in the past (overdue)
+    assert add_plant('Jim', 'Crassula', str(date.today() - timedelta(days=30)), 14, '') is True
+
+    success, new_watering = snooze('Jim', 1)
+    assert success is True
+    assert new_watering == date.today() + timedelta(days=1)
+
+    # Test with a plant and next watering is in the future (not overdue or due)
+    assert add_plant('Jane', 'Crassula', str(date.today() - timedelta(days=3)), 14, '') is True
+
+    success, new_watering = snooze('Jane', 1)
+    assert success is True
+    assert new_watering == date.today() + timedelta(days=12)
+
+    # Test with a plant and snooze is > 1 day
+    assert add_plant('John', 'Crassula', str(date.today() - timedelta(days=14)), 14, '') is True
+
+    success, new_watering = snooze('John', 13)
+    assert success is True
+    assert new_watering == date.today() + timedelta(days=13)
+
 
 
 def test_update_plant(test_db) -> None:
@@ -196,14 +235,9 @@ def test_update_plant(test_db) -> None:
         Pytest fixture providing an isolated temporary database.
     """
     # Set up two species so we can test genus change
-    species = create_species(1)
-    assert species is True
-
-    species = create_species(2)
-    assert species is True
-
-    result = add_plant('Joe', 'Crassula', '2026-04-01', 14, '')
-    assert result is True
+    assert create_species(1) is True
+    assert create_species(2) is True
+    assert add_plant('Joe', 'Crassula', '2026-04-01', 14, '') is True
 
     # Update multiple fields at once
     result = update_plant('Joe', 'James', 'Rosa', None, '2026-04-30', 30, 'North facing window.')
@@ -230,9 +264,14 @@ def test_update_plant(test_db) -> None:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM my_plants where nickname = 'James'")
         plant = cursor.fetchone()
+        cursor.execute("SELECT watered_date FROM watered_log WHERE plant_id = ? ORDER BY id DESC LIMIT 1", [plant['id']])
+        log_entry = cursor.fetchone()
 
     assert plant['last_watered'] == '2026-05-01'
     assert plant['next_watering'] == str(date.fromisoformat('2026-05-01') + timedelta(days=plant['interval']))
+
+    # Verify the watered_log entry was updated to match the new last_watered date
+    assert log_entry['watered_date'] == '2026-05-01'
 
     # Update last_watered and interval together — next_watering should use the new interval
     result = update_plant('James', None, None, '2026-05-10', None, 7)
@@ -261,8 +300,7 @@ def test_update_species(test_db) -> None:
         Pytest fixture providing an isolated temporary database.
     """
     # Set up species to update
-    species = create_species()
-    assert species is True
+    assert create_species() is True
 
     # Update all fields
     result = update_species(
@@ -293,11 +331,8 @@ def test_delete_plant(test_db) -> None:
         Pytest fixture providing an isolated temporary database.
     """
     # Set up species and plant
-    species = create_species()
-    assert species is True
-
-    result = add_plant('Joe', 'Crassula', '2026-04-01', 14, '')
-    assert result is True
+    assert create_species() is True
+    assert add_plant('Joe', 'Crassula', '2026-04-01', 14, '') is True
 
     # Test error case — non-existent plant
     result = delete_plant('Jim')
@@ -325,8 +360,7 @@ def test_delete_species(test_db) -> None:
         Pytest fixture providing an isolated temporary database.
     """
     # Set up species to delete
-    species = create_species()
-    assert species is True
+    assert create_species() is True
 
     # Test error case — non-existent species
     result = delete_species('Rosa')
@@ -464,7 +498,16 @@ def test_calculate_interval(test_db) -> None:
     assert result == 14
     
 def test_update_care_info(test_db, mock_claude) -> None:
+    """
+    Test updating species care info via the Claude API.
 
+    Parameters
+    ----------
+    test_db : fixture
+        Pytest fixture providing an isolated temporary database.
+    mock_claude : fixture
+        Patches _ask_claude to return deterministic care info without hitting the API.
+    """
     # Test without API Key configured.
     result = update_care_info('Crassula')
     assert result[0] is False
@@ -476,10 +519,8 @@ def test_update_care_info(test_db, mock_claude) -> None:
     assert result[0] is False
 
     # Test with API configured and plant exists
-    result = create_species(1)
-    assert result is True
-    result = add_plant('Joe', 'Crassula', '2026-04-01', 14, 'North facing window.')
-    assert result is True
+    assert create_species(1) is True
+    assert add_plant('Joe', 'Crassula', '2026-04-01', 14, 'North facing window.') is True
     success, result = update_care_info('Crassula')
     assert success is True
     assert "Water daily." in result
@@ -490,7 +531,16 @@ def test_update_care_info(test_db, mock_claude) -> None:
     assert result == "Care info is already up to date."
 
 def test_diagnose(test_db, mock_claude) -> None:
+    """
+    Test diagnosing a plant's condition via the Claude API.
 
+    Parameters
+    ----------
+    test_db : fixture
+        Pytest fixture providing an isolated temporary database.
+    mock_claude : fixture
+        Patches _ask_claude_stream to return a deterministic response without hitting the API.
+    """
     # Test without API Key configured.
     success, result = diagnose('Joe', 'Looks brown', None)
     assert success is False
@@ -502,10 +552,8 @@ def test_diagnose(test_db, mock_claude) -> None:
     assert success is False
 
     # Test with API configured and plant exists and just condition
-    result = create_species(1)
-    assert result is True
-    result = add_plant('Joe', 'Crassula', '2026-04-01', 14, 'North facing window.')
-    assert result is True
+    assert create_species(1) is True
+    assert add_plant('Joe', 'Crassula', '2026-04-01', 14, 'North facing window.') is True
     success, stream = diagnose('Joe', 'Looks brown', None)
     assert success is True
     assert "Plant seems healthy." in "".join(stream)

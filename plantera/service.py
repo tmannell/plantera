@@ -5,7 +5,7 @@ import mimetypes
 import sqlite3
 import os
 from datetime import datetime, timedelta, date
-from typing import Optional, Union
+from typing import Optional, Union, Iterator
 
 import plantera.db as db
 
@@ -29,6 +29,8 @@ def add_plant(nickname: str, genus: str, last_watered: str, interval: int, envir
         Date the plant was last watered in YYYY-MM-DD format
     interval : int
         Watering interval in days
+    environment : str
+        Optional description of the plant's environment (e.g. "North facing window")
 
     Returns
     -------
@@ -36,38 +38,29 @@ def add_plant(nickname: str, genus: str, last_watered: str, interval: int, envir
         True on success, error message string on failure
     """
 
-    # Validate key inputs
     validated = _validate_inputs(nickname=nickname, genus=genus, last_watered=last_watered, interval=interval)
     if validated is not True:
         return validated
 
-    # Get the plant species ID from the plant_species table
     species = _get_plant('plant_species', genus)
 
     if species is None:
-        # If species is None / nothing is returned, then the plant species doesn't exist
         return f"Error: Species '{genus}' not found. Run 'plantera show --species' to see available species."
 
     else:
 
         try:
-            # Store plant_species_id in a variable
             plant_species_id = species["id"]
 
-            # Convert last_watered date to datetime object
             last_watered = datetime.strptime(last_watered, "%Y-%m-%d")
-            # Calculate the next watering date based on the last watered date and the interval
             next_watering = last_watered + timedelta(days=interval)
 
-            # Open DB connection
             with db.get_connection() as conn:
-                # Insert a new user plant into the plants table
                 cursor = conn.execute(
                     "INSERT INTO my_plants (nickname, plant_species_id, last_watered, next_watering, interval, environment) VALUES (?, ?, ?, ?, ?, ?)",
                     (nickname, plant_species_id, last_watered.strftime('%Y-%m-%d'), next_watering.strftime('%Y-%m-%d'), interval, environment)
                 )
 
-                # Log watering if it's present.
                 _log_watering(conn, cursor.lastrowid, last_watered.strftime('%Y-%m-%d'))
 
                 return True
@@ -95,20 +88,16 @@ def add_plant_species(genus: str, common_name: str, care_info: str) -> Union[boo
         True on success, Exception on failure
     """
 
-    # Validate key inputs
     validated = _validate_inputs(genus=genus, common_name=common_name)
     if validated is not True:
         return validated
 
     try:
-        # Open DB connection
         with db.get_connection() as conn:
-            # Insert a new plant species into the plant types table
             conn.execute(
                 "INSERT INTO plant_species (genus, common_name, care_info) VALUES (?, ?, ?)", (genus, common_name, care_info)
             )
 
-            # Return True if the plant species was added successfully
             return True
     except sqlite3.IntegrityError:
         return f"Error: Species '{genus}' already exists. Run 'plantera show --species' to see available species."
@@ -180,11 +169,9 @@ def watered(nickname: str) -> tuple[bool, Union[str, date, Exception]]:
         (True, next_watering date) on success, (False, error message or Exception) on failure.
     """
 
-    # Check if the plant exists
     my_plant = _get_plant('my_plants', nickname)
 
     if my_plant is None:
-        # If the plant doesn't exist, return an error message'
         return False, f"Error: Plant '{nickname}' not found. Run 'plantera show' to see your plants."
 
     else:
@@ -207,6 +194,47 @@ def watered(nickname: str) -> tuple[bool, Union[str, date, Exception]]:
         except Exception as e:
             return False, e
 
+
+def snooze(nickname_to_update: str, days: int) -> Union[tuple, Exception, str]:
+    """
+    Delay a plant's next watering date by a given number of days.
+
+    If the plant is overdue (next_watering <= today), the new date is calculated
+    from today. If it's not yet due, the days are added to the existing next_watering date.
+
+    Parameters
+    ----------
+    nickname_to_update : str
+        Nickname of the plant to snooze
+    days : int
+        Number of days to delay the next watering
+
+    Returns
+    -------
+    tuple[bool, date or str]
+        (True, new next_watering date) on success, (False, error message) on failure
+    """
+
+    plant = _get_plant('my_plants', nickname_to_update)
+    if plant is None:
+        return False, f"Error: Plant '{nickname_to_update}' not found. Run 'plantera show' to see your plants."
+
+    try:
+        with db.get_connection() as conn:
+            next_watering = date.fromisoformat(plant['next_watering'])
+            if next_watering <= date.today():
+                new_watering = date.today() + timedelta(days=days)
+            elif next_watering > date.today():
+                new_watering = next_watering + timedelta(days=days)
+
+            conn.execute("UPDATE my_plants SET next_watering = ? WHERE id = ?", [str(new_watering), plant['id']])
+            return True, new_watering
+
+    except Exception as e:
+
+        return False, e
+
+
 def update_plant(nickname_to_update: str, nickname: str = None, genus: str = None, last_watered: str = None,
                  next_watering: str = None, interval: int = None, environment: str = None) -> Union[bool, Exception, str]:
     """
@@ -226,21 +254,20 @@ def update_plant(nickname_to_update: str, nickname: str = None, genus: str = Non
         Override next watering date in YYYY-MM-DD format
     interval : int, optional
         New watering interval in days
+    environment : str, optional
+        Updated description of the plant's environment
 
     Returns
     -------
     bool or Exception or str
         True on success, error message string on failure
     """
-    # Retrieve the plant to update
     my_plant = _get_plant('my_plants', nickname_to_update)
     if my_plant is None:
-        # if the plant doesn't exist, return an error message'
         return f"Error: Plant '{nickname_to_update}' not found. Run 'plantera show' to see your plants."
 
     else:
 
-        # Validate key inputs
         validated = _validate_inputs(nickname=nickname, genus=genus, last_watered=last_watered, next_watering=next_watering, interval=interval)
         if validated is not True:
             return validated
@@ -253,13 +280,11 @@ def update_plant(nickname_to_update: str, nickname: str = None, genus: str = Non
             values.append(nickname)
 
         if genus:
-            # Get the plant species ID from the plant_species table
             species = _get_plant('plant_species', genus)
             if species is not None:
                 fields.append('plant_species_id = ?')
                 values.append(species['id'])
             else:
-                # Return an error message if the plant species doesn't exist'
                 return f"Error: Species '{genus}' not found. Run 'plantera show --species' to see available species."
 
         if last_watered:
@@ -286,7 +311,6 @@ def update_plant(nickname_to_update: str, nickname: str = None, genus: str = Non
         values.append(nickname_to_update)
 
         if len(fields) == 0:
-            # No options, no fields return an error message
             return "Error: No fields to update. Run 'plantera update --help' for usage."
 
         try:
@@ -325,10 +349,8 @@ def update_species(genus_to_update: str, genus: str = None, common_name: str = N
         True on success, error message string on failure
     """
 
-    # Retrieve the plant species to update
     species = _get_plant('plant_species', genus_to_update)
     if species is None:
-        # if the plant species doesn't exist, return an error message'
         return f"Error: Species '{genus_to_update}' not found. Run 'plantera show --species' to see available species."
 
     else:
@@ -355,7 +377,6 @@ def update_species(genus_to_update: str, genus: str = None, common_name: str = N
         values.append(species['id'])
 
         if len(fields) == 0:
-            # No options, no fields to update return an error message
             return "Error: No fields to update. Run 'plantera update-species --help' for usage."
 
         try:
@@ -383,7 +404,6 @@ def delete_plant(nickname: str) -> Union[bool, Exception, str]:
     bool or Exception or str
         True on success, error message string on failure
     """
-    # Check if the plant exists
     if _get_plant('my_plants', nickname):
 
         try:
@@ -414,7 +434,6 @@ def delete_species(genus: str) -> Union[bool, Exception, str]:
         True on success, error message string on failure
     """
 
-    # Check if the plant species exists
     species = _get_plant('plant_species', genus)
     if species is None:
         return f"Error: Species '{genus}' not found. Run 'plantera show --species' to see available species."
@@ -485,9 +504,21 @@ def get_settings() -> Union[list, Exception]:
     except Exception as e:
         return e
 
-def update_care_info(genus):
+def update_care_info(genus: str) -> tuple[bool, str]:
+    """
+    Fetch updated care info for a species from the Claude API and persist it if changed.
 
-    # Get API Key
+    Parameters
+    ----------
+    genus : str
+        The genus of the species to update (must exist in plant_species table)
+
+    Returns
+    -------
+    tuple[bool, str]
+        (True, result message) on success, (False, error message) on failure
+    """
+
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT value FROM settings WHERE key = 'claude_api_key'")
         row = cursor.fetchone()
@@ -496,10 +527,8 @@ def update_care_info(genus):
 
         api_key = row[0]
 
-    # Get the data on the plant we are diagnosing.
     species = _get_plant('plant_species', genus)
-    
-    # Throw an error if the plant doesn't exist.
+
     if species is None:
         return False, f"Error: Species '{genus}' not found. Run 'plantera show --species' to see available species."
 
@@ -532,7 +561,27 @@ def update_care_info(genus):
         return True, "Care info is already up to date."
 
 
-def diagnose(nickname, condition, picture_path):
+def diagnose(nickname: str, condition: str, picture_path: str) -> tuple[bool, Union[str, any]]:
+    """
+    Diagnose a plant's condition using the Claude API, optionally with an image.
+
+    Builds a prompt from the plant's stored data including watering history and environment,
+    then streams the response back to the caller.
+
+    Parameters
+    ----------
+    nickname : str
+        The plant's nickname (must exist in my_plants)
+    condition : str
+        A text description of the observed condition (e.g. "Brown leaves")
+    picture_path : str or None
+        Path to an image file to include in the diagnosis, or None for text-only
+
+    Returns
+    -------
+    tuple[bool, str or iterator]
+        (True, text stream iterator) on success, (False, error message) on failure
+    """
 
     with db.get_connection() as conn:
         cursor = conn.execute("SELECT value FROM settings WHERE key = 'claude_api_key'")
@@ -619,7 +668,6 @@ def _get_plant(table: str, value: str) -> Optional[dict]:
     sqlite3.Row or None
         The matching row, or None if not found
     """
-    # Validate table arguments
     if table not in ALLOWED_LOOKUPS:
         raise ValueError(
             f"Invalid table name: {table}. Allowed tables are 'my_plants' and 'plant_species'."
@@ -711,7 +759,6 @@ def _calculate_interval(current_interval: int, last_watered: str) -> Union[int, 
         The updated interval in days, or Exception on failure.
     """
 
-    # Get the auto interval ema_alpha value
     try:
         with db.get_connection() as conn:
             cursor = conn.execute("SELECT value FROM settings WHERE key = 'auto_interval'")
@@ -725,20 +772,35 @@ def _calculate_interval(current_interval: int, last_watered: str) -> Union[int, 
     except Exception as e:
         return e
 
-
-    # Determine days since watered.
     days_since_watered = (date.today() - date.fromisoformat(last_watered)).days
 
-    # Safety, don't modify current interval is watered was triggered on the same plant twice in one day.
+    # Skip same-day waterings — marking a plant watered twice in one day shouldn't shrink the interval.
     if days_since_watered < 1:
         return current_interval
 
-    # Return and calculate the current interval.
     return round(ema_value * days_since_watered + (1 - ema_value) * current_interval)
 
+
 def _log_watering(conn, plant_id: int, watered_date: str, update: bool = False) -> None:
+    """
+    Insert or update a watered_log entry for a plant.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Active database connection (called within an existing transaction)
+    plant_id : int
+        ID of the plant in my_plants
+    watered_date : str
+        Date to log in YYYY-MM-DD format
+    update : bool
+        If True, update the most recent log entry instead of inserting a new one
+
+    Returns
+    -------
+    None
+    """
     if update:
-        # Check if the plant has been watered before if it hasn't you can't update the last watered date
         count = conn.execute(
             "SELECT COUNT(*) FROM watered_log WHERE plant_id = ?", [plant_id]
         )
@@ -756,8 +818,24 @@ def _log_watering(conn, plant_id: int, watered_date: str, update: bool = False) 
             [plant_id, watered_date]
         )
 
-def _ask_claude(prompt, api_key):
-    
+
+def _ask_claude(prompt: list, api_key: str) -> str:
+    """
+    Send a prompt to Claude and return the full response text.
+
+    Parameters
+    ----------
+    prompt : list
+        List of content blocks to send as the user message.
+    api_key : str
+        Anthropic API key.
+
+    Returns
+    -------
+    str
+        The full response text from Claude.
+    """
+
     client = anthropic.Anthropic(api_key=api_key)
 
     message = client.messages.create(
@@ -767,9 +845,25 @@ def _ask_claude(prompt, api_key):
     )
 
     return message.content[0].text
-    
-def _ask_claude_stream(prompt, api_key):
-    
+
+
+def _ask_claude_stream(prompt: list, api_key: str) -> Iterator[str]:
+    """
+    Send a prompt to Claude and yield the response text as a stream.
+
+    Parameters
+    ----------
+    prompt : list
+        List of content blocks to send as the user message.
+    api_key : str
+        Anthropic API key.
+
+    Yields
+    ------
+    str
+        Text chunks from Claude's streaming response.
+    """
+
     client = anthropic.Anthropic(api_key=api_key)
 
     with client.messages.stream(
@@ -779,9 +873,3 @@ def _ask_claude_stream(prompt, api_key):
     ) as stream:
         for text in stream.text_stream:
             yield text
-        
-
-        
-
-
-

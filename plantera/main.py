@@ -54,7 +54,6 @@ def startup(
   # Show banner on first run
   first_run = not db.DB_PATH.exists()
 
-  # Initialize the database
   result = db.db_init()
   if result not in [True, None]:
     typer.echo(f"Error initializing database: {str(result)}")
@@ -78,7 +77,7 @@ def add(
     environment: Annotated[str, typer.Argument(help="Description of the location and physical environment of the plant")] = ''
 ) -> None:
   """
-  CLI command to add a plant to the database.
+  Add a plant to the database.
 
   Parameters
   ----------
@@ -90,12 +89,12 @@ def add(
       Date the plant was last watered in YYYY-MM-DD format
   interval : int
       Watering interval in days
+  environment : str
+      Optional description of the plant's environment (e.g. "North facing window")
   """
 
-  # Add plant to the database
   result = service.add_plant(nickname, genus, last_watered, interval, environment)
 
-  # Check the result and output the appropriate message
   if result is True:
     typer.echo(f"Plant '{nickname}' added successfully!")
   else:
@@ -110,7 +109,7 @@ def add_species(
     care_info: Annotated[str, typer.Argument(help="Care information for the plant")] = "No care information provided."
 ) -> None:
   """
-  CLI command to add a plant species to the database.
+  Add a plant species to the database.
 
   Parameters
   ----------
@@ -122,10 +121,8 @@ def add_species(
       Care instructions for the species
   """
 
-  # Add plant species to the database
   result = service.add_plant_species(genus, common_name, care_info)
 
-  # Check the result and output the appropriate message
   if result is True:
     typer.echo(f"Species '{genus} - {common_name}' added successfully!")
   else:
@@ -140,7 +137,7 @@ def show(
     due: Annotated[bool, typer.Option(help="Show only plants due for watering (True / False)")] = False,
 ) -> None:
     """
-    CLI command to show plants in the database.
+    Show plants in the database.
 
     Parameters
     ----------
@@ -152,16 +149,14 @@ def show(
         If True, show only plants due for watering
     """
 
-    # Check if both species and due are True and output an error message
     if species and due:
         typer.echo("Error: Cannot use --species and --due together.")
         raise typer.Exit(code=1)
-    # Check if name and species or due are True and output an error message
+
     if name and (species or due):
         typer.echo("Error: Cannot use --name with --species or --due.")
         raise typer.Exit(code=1)
 
-    # Show plants based on the specified criteria
     result = service.show_plants(name, species, due)
 
     if isinstance(result, list):
@@ -181,9 +176,7 @@ def show(
                     typer.echo("All plants are watered and up to date.")
 
         else:
-            # Results aren't empty format table for output
             if not species:
-                # My Plants table can be filtered by due for watering
                 table = Table(
                     title="\nPlantera",
                     header_style="bold green",
@@ -236,7 +229,6 @@ def show(
                             next_watering,
                             f"{str(plant['interval'])} {'day' if plant['interval'] == 1 else 'days'}",
                         )
-                        
 
                 Console().print(table)
             else:
@@ -272,7 +264,7 @@ def show(
 @app.command()
 def watered(nickname: Annotated[str, typer.Argument(help="Mark plant as watered (Plant nickname)")]) -> None:
   """
-  CLI command to mark a plant as watered and recalculate next watering date.
+  Mark a plant as watered and recalculate its next watering date.
 
   Parameters
   ----------
@@ -280,14 +272,46 @@ def watered(nickname: Annotated[str, typer.Argument(help="Mark plant as watered 
       The plant's nickname
   """
 
-  # Mark plant as watered
   success, result = service.watered(nickname)
-  # Check the result and output the appropriate message
+
   if success:
     typer.echo(f"Plant '{nickname}' marked as watered, next watering is {humanize.naturalday(result)}.")
   else:
     typer.echo(str(result))
-    raise typer.Exit(code=1)  
+    raise typer.Exit(code=1)
+
+
+@app.command()
+def snooze(
+    nickname: Annotated[str, typer.Argument(help="The nickname of the plant you wish to delay watering (snooze)")],
+    days: Annotated[int, typer.Argument(help="The number of days to delay watering the plant")] = 1
+) -> None:
+  """
+  Delay a plant's next watering date by a given number of days.
+
+  Parameters
+  ----------
+  nickname : str
+      The plant's nickname
+  days : int
+      Number of days to snooze — must be between 1 and 365
+  """
+
+  if days < 1:
+    typer.echo("Error: Number of days must be greater than 0.")
+    raise typer.Exit(code=1)
+
+  if days > 365:
+    typer.echo("Error: Number of days must be less than or equal to 365.")
+    raise typer.Exit(code=1)
+
+  success, result = service.snooze(nickname, days)
+
+  if success is True:
+    typer.echo(f"Plant '{nickname}' snoozed for {days} days.")
+  else:
+    typer.echo(str(result))
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -301,7 +325,7 @@ def update(
     environment: Annotated[Optional[str], typer.Option(help="Description of the location and physical environment of the plant")] = None
 ) -> None:
   """
-  CLI command to update a plant in the database.
+  Update a plant in the database.
 
   Parameters
   ----------
@@ -317,19 +341,17 @@ def update(
       Override next watering date in YYYY-MM-DD format
   interval : int, optional
       New watering interval in days
+  environment : str, optional
+      Updated description of the plant's environment
   """
 
-  # Update the plant in the database
   result = service.update_plant(my_plant, nickname, genus, last_watered, next_watering, interval, environment)
 
-  # Check the result and output the appropriate message
   if result is True:
     typer.echo(f"Plant '{my_plant}' updated successfully!")
-
   elif isinstance(result, str):
     typer.echo(result)
     raise typer.Exit(code=1)
-
   else:
     typer.echo(str(result))
     raise typer.Exit(code=1)
@@ -343,7 +365,7 @@ def update_species(
     care_info: Annotated[Optional[str], typer.Option(help="Updated care information for the plant")] = None
 ) -> None:
   """
-  CLI command to update a plant species in the database.
+  Update a plant species in the database.
 
   Parameters
   ----------
@@ -357,10 +379,8 @@ def update_species(
       Updated care instructions
   """
 
-  # Update the plant species in the database
   result = service.update_species(genus_to_update, genus, common_name, care_info)
 
-  # Check the result and output the appropriate message
   if result is True:
     typer.echo(f"Species '{genus_to_update}' updated successfully!")
   elif isinstance(result, str):
@@ -374,7 +394,7 @@ def update_species(
 @app.command()
 def delete(nickname: Annotated[str, typer.Argument(help="Nickname of the plant to delete")]) -> None:
   """
-  CLI command to delete a plant from the database.
+  Delete a plant from the database.
 
   Parameters
   ----------
@@ -382,15 +402,12 @@ def delete(nickname: Annotated[str, typer.Argument(help="Nickname of the plant t
       Nickname of the plant to delete
   """
 
-  # Confirm deletion with the user
   if not typer.confirm(f"Are you sure you want to delete plant '{nickname}'?"):
     typer.echo("Deletion cancelled.")
     return
 
-  # Delete the plant from the database
   result = service.delete_plant(nickname)
 
-  # Check the result and output the appropriate message
   if result is True:
     typer.echo(f"Plant '{nickname}' deleted successfully!")
   else:
@@ -401,7 +418,7 @@ def delete(nickname: Annotated[str, typer.Argument(help="Nickname of the plant t
 @app.command()
 def delete_species(genus: Annotated[str, typer.Argument(help="Genus of the plant to delete")]) -> None:
   """
-  CLI command to delete a plant species from the database.
+  Delete a plant species from the database.
 
   Parameters
   ----------
@@ -409,31 +426,26 @@ def delete_species(genus: Annotated[str, typer.Argument(help="Genus of the plant
       Genus of the species to delete
   """
 
-  # Confirm deletion with the user
   if not typer.confirm(f"Are you sure you want to delete species '{genus}'?"):
     typer.echo("Deletion cancelled.")
     return
 
-  # Delete the plant species from the database
   result = service.delete_species(genus)
 
-  # Check the result and output the appropriate message
   if result is True:
     typer.echo(f"Species '{genus}' deleted successfully!")
   else:
     typer.echo(str(result))
     raise typer.Exit(code=1)
 
+
 @app.command()
 def remind() -> None:
-  """
-  Send a system notification for plants due for watering.
-  """
-  # Get plants due for watering
+  """Send a system notification for plants due for watering."""
+
   plants = service.show_plants(None, False, True)
   if len(plants) > 0:
     reminders = []
-    # Build reminder message list from due plants
     for plant in plants:
       next_watering = date.fromisoformat(plant['next_watering'])
       reminders.append(f"Water {plant['nickname']} - {plant['common_name']} (Due: {humanize.naturalday(next_watering)})")
@@ -445,17 +457,18 @@ def remind() -> None:
       # If on Linux, use notify-send to send the notification. Plyer doesn't respect the timeout parameter.
       subprocess.call(["notify-send", "-t", "10000", "-a", "Plantera", title, message])
     else:
-      # If on Windows or macOS, use the plyer notification module.
       from plyer import notification
       notification.notify(title=title, message=message, timeout=10)
   else:
     typer.echo("No plants are due for watering.")
 
+
 @app.command()
-def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to enable or update (auto_interval, claude_api_key [CLAUDE])")] = None,
-           value: Annotated[Optional[str], typer.Option(help="Set the value of the setting")] = None,
-           delete: Annotated[bool, typer.Option(help="Delete the setting")] = False
-           ) -> None:
+def config(
+    setting: Annotated[Optional[str], typer.Argument(help="The setting to enable or update (auto_interval, claude_api_key [CLAUDE])")] = None,
+    value: Annotated[Optional[str], typer.Option(help="Set the value of the setting")] = None,
+    delete: Annotated[bool, typer.Option(help="Delete the setting")] = False
+) -> None:
   """
   View or update Plantera settings.
 
@@ -472,8 +485,6 @@ def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to
       If True, delete the setting row rather than updating it.
   """
 
-  # Validate inputs.
-  # value and delete cannot be used together.
   if value and delete:
     typer.echo("Error: Cannot use --value and --delete together.")
     raise typer.Exit(code=1)
@@ -481,7 +492,6 @@ def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to
   if setting is not None:
     setting = setting.replace('-', '_')
 
-  # If config is run without arguments, return setting values and print a table.
   if setting is None:
     result = service.get_settings()
 
@@ -490,13 +500,11 @@ def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to
         if len(result) == 0:
           typer.echo("There are no settings configured.")
         else:
-          # Results aren't empty format table for output
           table = Table(title="\nSettings", header_style="bold green", border_style="green", box=ROUNDED,
                         row_styles=["", "bold"])
 
           table.add_column("Setting Name")
           table.add_column("Value")
-
 
           for setting in result:
             table.add_row(
@@ -517,12 +525,11 @@ def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to
     typer.echo(f"Error: Invalid setting. Allowed settings are: {', '.join(ALLOWED_SETTINGS)}")
     raise typer.Exit(code=1)
 
-  # claude_api_key requires a value.
   if setting == "claude_api_key" and value is None:
     typer.echo("Error: claude_api_key requires a value.")
     raise typer.Exit(code=1)
 
-  # auto_interval - set default value if not set.
+  # auto_interval defaults to 0.4 (EMA alpha) when no value is provided.
   if setting == "auto_interval" and value is None:
     value = '0.4'
 
@@ -534,13 +541,47 @@ def config(setting: Annotated[Optional[str], typer.Argument(help="The setting to
     typer.echo(str(result))
     raise typer.Exit(code=1)
 
+
+@app.command()
+def update_care_info(
+    genus: Annotated[str, typer.Argument(help="Genus of the plant species to update")],
+) -> None:
+  """
+  Fetch and update care info for a species using the Claude API.
+
+  Parameters
+  ----------
+  genus : str
+      Genus of the species to update (must exist in plant_species table)
+  """
+
+  success, result = service.update_care_info(genus)
+  if success:
+    console.print(f"\n[bold green]Response from Claude:[/bold green]")
+    typer.echo(result)
+  else:
+    typer.echo(str(result))
+    raise typer.Exit(code=1)
+
+
 @app.command()
 def diagnose(
     nickname: Annotated[str, typer.Argument(help="The nickname of the plant you wish to diagnose")],
     condition: Annotated[Optional[str], typer.Option(help="Text description of plant's condition")] = None,
     picture: Annotated[Optional[str], typer.Option(help="Path to picture of plant")] = None,
-):
+) -> None:
+  """
+  Diagnose a plant's condition using the Claude API.
 
+  Parameters
+  ----------
+  nickname : str
+      The plant's nickname (must exist in my_plants)
+  condition : str, optional
+      Text description of the observed condition (e.g. "Brown leaves")
+  picture : str, optional
+      Path to an image file to include in the diagnosis
+  """
 
   if condition is None and picture is None:
     typer.echo("Error: You must provide either a condition or a picture to diagnose the plant.")
@@ -550,25 +591,11 @@ def diagnose(
   if success:
     console.print(f"\n[bold green]Response from Claude:[/bold green]\n")
     for chunk in result:
-      print (chunk, end="", flush=True)
+      print(chunk, end="", flush=True)
     print()
   else:
     typer.echo(str(result))
     raise typer.Exit(code=1)
-
-@app.command()
-def update_care_info(
-    genus: Annotated[str, typer.Argument(help="Genus of the plant species to update")],
-):
-
-    success, result = service.update_care_info(genus)
-    if success:
-      console.print(f"\n[bold green]Response from Claude:[/bold green]")
-      typer.echo(result)
-    else:
-      typer.echo(str(result))
-      raise typer.Exit(code=1)
-
 
 
 if __name__ == "__main__":
