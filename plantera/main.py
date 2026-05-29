@@ -15,7 +15,7 @@ import typer
 console = Console()
 app = typer.Typer(add_completion=False)
 
-__version__ = "0.1.6"
+__version__ = "1.0.0"
 
 BANNER = """[green]
   __
@@ -160,10 +160,10 @@ def show(
     result = service.show_plants(name, species, due)
 
     if isinstance(result, list):
-        if len(result) == 0 and not due:
-            typer.echo("No plants in your collection yet. Try 'plantera add --help'.")
-        elif len(result) == 0 and name:
+        if len(result) == 0 and name:
             typer.echo(f"No plants found with nickname '{name}'.")
+        elif len(result) == 0 and not due:
+            typer.echo("No plants in your collection yet. Try 'plantera add --help'.")
         elif len(result) == 0 and due:
             with db.get_connection() as conn:
                 cursor = conn.execute("SELECT * FROM my_plants")
@@ -302,7 +302,7 @@ def snooze(
     raise typer.Exit(code=1)
 
   if days > 365:
-    typer.echo("Error: Number of days must be less than or equal to 365.")
+    typer.echo("Error: That's a long time to not water a plant! Number of days must be less than or equal to 365.")
     raise typer.Exit(code=1)
 
   success, result = service.snooze(nickname, days)
