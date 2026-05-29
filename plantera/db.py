@@ -4,9 +4,36 @@ from pathlib import Path
 DB_DIR = Path.home() / ".local" / "share" / "plantera"
 DB_PATH = DB_DIR / "plantera.db"
 
+# Each entry is a SQL statement applied once in order and tracked in schema_version.
+_migrations = [
+    "ALTER TABLE my_plants ADD COLUMN environment TEXT",
+]
+
+def _run_migrations(conn):
+    """
+    Apply any pending schema migrations in order.
+
+    Reads the current schema version from schema_version, then runs each
+    migration in _migrations that hasn't been applied yet. Each applied
+    migration is recorded so it only runs once.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Active database connection (called within db_init's transaction)
+    """
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)")
+    current = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] or 0
+    for i, sql in enumerate(_migrations[current:], start=current + 1):
+        conn.execute(sql)
+        conn.execute("INSERT INTO schema_version (version) VALUES (?)", [i])
+
 def db_init():
     """
-    Initialize the database by creating the plant_species and my_plants tables if they don't exist.
+    Initialize the database by creating all required tables and running pending migrations.
+
+    Creates plant_species, my_plants, watered_log, and settings tables if they
+    don't exist, then delegates to _run_migrations to apply any schema changes.
 
     Returns
     -------
@@ -31,10 +58,17 @@ def db_init():
                          next_watering TEXT, \
                          interval INTEGER)")
 
+            conn.execute("CREATE TABLE IF NOT EXISTS watered_log ( \
+                         id INTEGER PRIMARY KEY AUTOINCREMENT, \
+                         plant_id INTEGER NOT NULL, \
+                         watered_date TEXT NOT NULL)")
+
             conn.execute("CREATE TABLE IF NOT EXISTS settings ( \
                          id INTEGER PRIMARY KEY AUTOINCREMENT, \
                          key TEXT UNIQUE COLLATE NOCASE, \
                          value TEXT)")
+
+            _run_migrations(conn)
 
         except Exception as e:
             return e

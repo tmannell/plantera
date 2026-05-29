@@ -10,6 +10,7 @@ authors = [
 license = { text = "GPL-3.0-or-later" }
 
 dependencies = [
+    "anthropic>=0.104.1",
     "humanize>=4.15.0",
     "plyer>=2.1.0",
     "rich>=14.3.3",
