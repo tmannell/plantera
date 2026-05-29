@@ -139,94 +139,134 @@ def show(
     species: Annotated[bool, typer.Option(help="Show Species (True / False)")] = False,
     due: Annotated[bool, typer.Option(help="Show only plants due for watering (True / False)")] = False,
 ) -> None:
-  """
-  CLI command to show plants in the database.
+    """
+    CLI command to show plants in the database.
 
-  Parameters
-  ----------
-  name : str
-      If provided, show a single plant matching the nickname
-  species : bool
-      If True, show plant species instead of my plants
-  due : bool
-      If True, show only plants due for watering
-  """
+    Parameters
+    ----------
+    name : str
+        If provided, show a single plant matching the nickname
+    species : bool
+        If True, show plant species instead of my plants
+    due : bool
+        If True, show only plants due for watering
+    """
 
-  # Check if both species and due are True and output an error message
-  if species and due:
-    typer.echo("Error: Cannot use --species and --due together.")
-    raise typer.Exit(code=1)
-  # Check if name and species or due are True and output an error message
-  if name and (species or due):
-    typer.echo("Error: Cannot use --name with --species or --due.")
-    raise typer.Exit(code=1)
+    # Check if both species and due are True and output an error message
+    if species and due:
+        typer.echo("Error: Cannot use --species and --due together.")
+        raise typer.Exit(code=1)
+    # Check if name and species or due are True and output an error message
+    if name and (species or due):
+        typer.echo("Error: Cannot use --name with --species or --due.")
+        raise typer.Exit(code=1)
 
-  # Show plants based on the specified criteria
-  result = service.show_plants(name, species, due)
+    # Show plants based on the specified criteria
+    result = service.show_plants(name, species, due)
 
-  if isinstance(result, list):
-    if len(result) == 0 and not due:
-      typer.echo("No plants in your collection yet. Try 'plantera add --help'.")
-    elif len(result) == 0 and name:
-      typer.echo(f"No plants found with nickname '{name}'.")
-    elif len(result) == 0 and due:
-      with db.get_connection() as conn:
-        cursor = conn.execute("SELECT * FROM my_plants")
-        plants = cursor.fetchall()
-        if len(plants) == 0:
-          typer.echo("No plants in your collection yet. Try 'plantera add --help'.")
+    if isinstance(result, list):
+        if len(result) == 0 and not due:
+            typer.echo("No plants in your collection yet. Try 'plantera add --help'.")
+        elif len(result) == 0 and name:
+            typer.echo(f"No plants found with nickname '{name}'.")
+        elif len(result) == 0 and due:
+            with db.get_connection() as conn:
+                cursor = conn.execute("SELECT * FROM my_plants")
+                plants = cursor.fetchall()
+                if len(plants) == 0:
+                    typer.echo(
+                        "No plants in your collection yet. Try 'plantera add --help'."
+                    )
+                else:
+                    typer.echo("All plants are watered and up to date.")
+
         else:
-          typer.echo("All plants are watered and up to date.")
+            # Results aren't empty format table for output
+            if not species:
+                # My Plants table can be filtered by due for watering
+                table = Table(
+                    title="\nPlantera",
+                    header_style="bold green",
+                    border_style="green",
+                    box=ROUNDED,
+                    row_styles=["", "bold"],
+                )
+
+                table.add_column("Nickname")
+                table.add_column("Genus")
+                table.add_column("Common Name")
+                table.add_column("Last Watered")
+                table.add_column("Next Watering")
+                table.add_column("Interval")
+
+                if name:
+                    table.add_column("Environment")
+                    table.add_column("Care Info")
+
+                for plant in result:
+                    next_watering_date = date.fromisoformat(plant["next_watering"])
+                    if plant["next_watering"] < str(date.today()):
+                        next_watering = (
+                            f"[red]{humanize.naturalday(next_watering_date)}[/red]"
+                        )
+                    else:
+                        next_watering = humanize.naturalday(next_watering_date)
+
+                    if name:
+                      table.add_row(
+                        plant["nickname"],
+                        plant["genus"],
+                        plant["common_name"],
+                        humanize.naturalday(
+                          date.fromisoformat(plant["last_watered"])
+                        ),
+                        next_watering,
+                        f"{str(plant['interval'])} {'day' if plant['interval'] == 1 else 'days'}",
+                        plant["environment"],
+                        plant["care_info"],
+                      )
+                    else:
+                        table.add_row(
+                            plant["nickname"],
+                            plant["genus"],
+                            plant["common_name"],
+                            humanize.naturalday(
+                                date.fromisoformat(plant["last_watered"])
+                            ),
+                            next_watering,
+                            f"{str(plant['interval'])} {'day' if plant['interval'] == 1 else 'days'}",
+                        )
+                        
+
+                Console().print(table)
+            else:
+                # Plant Species table
+                table = Table(
+                    title="\nPlant Species",
+                    header_style="bold green",
+                    border_style="green",
+                    box=ROUNDED,
+                    row_styles=["", "bold"],
+                )
+
+                table.add_column("ID")
+                table.add_column("Genus")
+                table.add_column("Common Name")
+                table.add_column("Care Info")
+
+                for row in result:
+                    table.add_row(
+                        str(row["id"]),
+                        row["genus"],
+                        row["common_name"],
+                        row["care_info"],
+                    )
+
+                Console().print(table)
 
     else:
-      # Results aren't empty format table for output
-      if not species:
-        # My Plants table can be filtered by due for watering
-        table = Table(title="\nPlantera", header_style="bold green", border_style="green", box=ROUNDED, row_styles=["", "bold"])
-
-        table.add_column("Nickname")
-        table.add_column("Genus")
-        table.add_column("Common Name")
-        table.add_column("Last Watered")
-        table.add_column("Next Watering")
-        table.add_column("Interval")
-        table.add_column("Care Info")
-
-        for plant in result:
-          next_watering_date = date.fromisoformat(plant['next_watering'])
-          if plant['next_watering'] < str(date.today()):
-            next_watering = f"[red]{humanize.naturalday(next_watering_date)}[/red]"
-          else:
-            next_watering = humanize.naturalday(next_watering_date)
-
-          table.add_row(
-            plant['nickname'],
-            plant['genus'],
-            plant['common_name'],
-            humanize.naturalday(date.fromisoformat(plant['last_watered'])),
-            next_watering,
-            f"{str(plant['interval'])} {'day' if plant['interval'] == 1 else 'days'}",
-            plant['care_info']
-          )
-
-        Console().print(table)
-      else:
-        # Plant Species table
-        table = Table(title="\nPlant Species", header_style="bold green", border_style="green", box=ROUNDED, row_styles=["", "bold"])
-
-        table.add_column("ID")
-        table.add_column("Genus")
-        table.add_column("Common Name")
-        table.add_column("Care Info")
-
-        for row in result:
-          table.add_row(str(row['id']), row['genus'], row['common_name'], row['care_info'])
-
-        Console().print(table)
-
-  else:
-    typer.echo(result)
-    raise typer.Exit(code=1)
+        typer.echo(result)
+        raise typer.Exit(code=1)
 
 
 @app.command()

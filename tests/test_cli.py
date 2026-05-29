@@ -75,7 +75,7 @@ def test_cli_show_plants(test_db) -> None:
         Pytest fixture providing an isolated temporary database.
     """
     # Test empty database state
-    result = runner.invoke(app, ['show'])
+    result = runner.invoke(app, ['show'], env={"COLUMNS": "200"})
     assert result.exit_code == 0
 
     result = create_species(1)
@@ -87,7 +87,7 @@ def test_cli_show_plants(test_db) -> None:
     assert result is True
 
     # Verify all-watered message when no plants are overdue
-    result = runner.invoke(app, ['show', '--due'])
+    result = runner.invoke(app, ['show', '--due'], env={"COLUMNS": "200"})
     assert result.exit_code == 0
 
     # Add an overdue plant — last watered 14 days ago
@@ -96,38 +96,38 @@ def test_cli_show_plants(test_db) -> None:
     assert result is True
 
     # Show all plants
-    result = runner.invoke(app, ['show'])
+    result = runner.invoke(app, ['show'], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert 'Joe' in result.output
     assert 'Crassula' in result.output
 
     # Show plant with a specific nickname
-    result = runner.invoke(app, ['show', '--name', 'Jim'])
+    result = runner.invoke(app, ['show', '--name', 'Jim'], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert 'Jim' in result.output
     assert 'Crassula' in result.output
 
     # Show species only
-    result = runner.invoke(app, ['show', '--species'])
+    result = runner.invoke(app, ['show', '--species'], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert 'Crassula' in result.output
     assert 'Jade' in result.output
 
     # Show overdue plants only — only Joe should appear
-    result = runner.invoke(app, ['show', '--due'])
+    result = runner.invoke(app, ['show', '--due'], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert 'Joe' in result.output
 
     # Test error cases for invalid arguments
-    result = runner.invoke(app, ['show', '--due', '--name', 'Joe'])
+    result = runner.invoke(app, ['show', '--due', '--name', 'Joe'], env={"COLUMNS": "200"})
     assert result.exit_code == 1
     assert "Error" in result.output
 
-    result = runner.invoke(app, ['show', '--species', '--name', 'Joe'])
+    result = runner.invoke(app, ['show', '--species', '--name', 'Joe'], env={"COLUMNS": "200"})
     assert result.exit_code == 1
     assert "Error" in result.output
 
-    result = runner.invoke(app, ['show', '--species', '--due'])
+    result = runner.invoke(app, ['show', '--species', '--due'], env={"COLUMNS": "200"})
     assert result.exit_code == 1
     assert "Error" in result.output
 
