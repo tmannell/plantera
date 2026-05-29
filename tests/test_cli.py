@@ -397,7 +397,7 @@ def test_cli_diagnose(test_db, mock_claude) -> None:
     assert result is True
     result = runner.invoke(app, ['diagnose', 'Joe', '--condition', 'Brown leaves'])
     assert result.exit_code == 0
-    assert 'Plant seems healthy.' in result
+    assert 'Plant seems healthy.' in result.output
 
     # Test with a picture and API key configured and plant exists.
     result = runner.invoke(app, ['diagnose', 'Joe', '--picture', 'tests/test_plant.jpg'])
