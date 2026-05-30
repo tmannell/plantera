@@ -1,4 +1,3 @@
-import anthropic
 import base64
 import json
 import mimetypes
@@ -836,6 +835,7 @@ def _ask_claude(prompt: list, api_key: str) -> str:
         The full response text from Claude.
     """
 
+    import anthropic
     client = anthropic.Anthropic(api_key=api_key)
 
     message = client.messages.create(
@@ -864,6 +864,7 @@ def _ask_claude_stream(prompt: list, api_key: str) -> Iterator[str]:
         Text chunks from Claude's streaming response.
     """
 
+    import anthropic
     client = anthropic.Anthropic(api_key=api_key)
 
     with client.messages.stream(
